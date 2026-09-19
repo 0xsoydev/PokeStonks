@@ -42,3 +42,6 @@ next-env.d.ts
 
 # generated maplibre worker (copied from node_modules via predev/prebuild)
 /public/maplibre/
+
+# generated village map sprites (copied from maps/assets via predev/prebuild)
+/public/maps/
