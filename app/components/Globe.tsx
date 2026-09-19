@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Map, Popup, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import PixelBlast from './PixelBlast';
 
 // ponytail: worker vendored to public/maplibre via predev/prebuild (Next breaks the bundled worker URL in v6)
 setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
@@ -54,8 +55,30 @@ export default function Globe() {
   }, []);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#06090f' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#87CEEB' }}>
       {/* ponytail: flat backdrop, setSky() atmosphere when globe styling gets a pass */}
+      {/* ponytail: blast sits under the map; canvas void is transparent so it shows through. ripples won't fire (map eats pointer events) — ambient only */}
+      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}>
+        <PixelBlast
+          variant="circle"
+          pixelSize={6}
+          color="#B497CF"
+          patternScale={3}
+          patternDensity={1.2}
+          pixelSizeJitter={0.5}
+          enableRipples
+          rippleSpeed={0.4}
+          rippleThickness={0.12}
+          rippleIntensityScale={1.5}
+          liquid
+          liquidStrength={0.12}
+          liquidRadius={1.2}
+          liquidWobbleSpeed={5}
+          speed={0.6}
+          edgeFade={0.25}
+          transparent
+        />
+      </div>
       <div ref={ref} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} />
       {selected && (
         <div className="absolute left-4 top-4 rounded-lg bg-black/70 px-4 py-2 text-sm text-white">{selected}</div>
