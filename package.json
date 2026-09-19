@@ -11,13 +11,20 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@getpara/evm-wallet-connectors": "^3.19.0",
+    "@getpara/react-sdk": "^3.19.0",
+    "@tanstack/react-query": "^5.103.1",
     "@types/three": "^0.186.0",
+    "ethers": "^6.17.0",
     "maplibre-gl": "^6.10.0",
     "next": "16.3.5",
+    "pixel-retroui": "^2.1.0",
     "postprocessing": "^6.39.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "three": "^0.186.0"
+    "three": "^0.186.0",
+    "viem": "^2.56.8",
+    "wagmi": "^3.7.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

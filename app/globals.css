@@ -1,1 +1,68 @@
 @import "tailwindcss";
+@import 'pixel-retroui/dist/index.css';
+@import 'pixel-retroui/dist/fonts.css';
+
+/* ponytail: pin Para's Radix dialog to true center on desktop (our Tailwind preflight fights their bundled translate vars); mobile keeps the bottom sheet */
+@media (hover: hover) and (pointer: fine) {
+  div[role="dialog"] {
+    position: fixed !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    margin: 0 !important;
+  }
+}
+/* ponytail: strip maplibre chrome, RetroUI Card carries the look; restyle if native close ever returns */
+.maplibregl-popup-content {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.maplibregl-popup-tip {
+  display: none !important;
+}
+
+/* ponytail: pixel-circle logo frame; swap for sprite sheet when vault feed lands */
+.px-logo {
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.px-logo-in {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  clip-path: polygon(38% 0, 62% 0, 74% 2%, 82% 6%, 88% 10%, 94% 18%, 98% 26%, 100% 38%, 100% 62%, 98% 74%, 94% 82%, 88% 90%, 82% 94%, 74% 98%, 62% 100%, 38% 100%, 26% 98%, 18% 94%, 12% 90%, 6% 82%, 2% 74%, 0 62%, 0 38%, 2% 26%, 6% 18%, 12% 10%, 18% 6%, 26% 2%);
+}
+.px-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 5px;
+  box-sizing: border-box;
+}
+.px-logo span {
+  font-size: 8px;
+  color: #000;
+}
+/* ponytail: cluster count chip; plain box (steps invisible at this size), swap for sprite when vault feed lands */
+.px-badge {
+  position: absolute;
+  right: -12px;
+  bottom: -4px;
+  background: #000;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 5px;
+  border: 2px solid #fff;
+  box-shadow: 2px 2px 0 #000;
+  z-index: 10;
+}
