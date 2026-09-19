@@ -1,465 +1,468 @@
-import { Room, Client } from 'colyseus';
-import { BattleState } from '../state/BattleState.ts';
-import { PlayerState } from '../state/PlayerState.ts';
-import { MonState } from '../state/MonState.ts';
-import { BrokerBot } from '../bot/BrokerBot.ts';
-import { getMove, legalMoves } from 'game-core/moves.ts';
-import { computeDamage, stockBuffFromPct, accuracyCheck, missChanceFromTap } from 'game-core/damage.ts';
+import { Room, Client, ServerError, CloseCode, type Delayed } from 'colyseus';
 import { z } from 'zod';
-import * as crypto from 'crypto';
+import {
+  buildMon, DEFAULT_LEVEL, getSpecies, isSpeciesId, SPECIES_IDS, ROUTE_TABLES, getMarket, pickSlot,
+  TIMING, MSG, PROTOCOL_VERSION, type SeatKey, type BattleEnd, type ClaimStatus, type BrokerMon, type TapCategory,
+} from 'game-core';
+import { BattleState, PlayerState, MonState } from '../state/schemas.ts';
+import { BattleEngine, other, type Choice, type EndReason } from '../engine/battle.ts';
+import { chooseBotMove } from '../engine/bot.ts';
+import { cryptoRng } from '../engine/rng.ts';
+import { config } from '../config.ts';
+import { prices, claims } from '../services.ts';
 
-const TURN_TIME_MS = 30_000;
-const MAX_MSG_PER_SEC = 10;
-
-const LockMoveSchema = z.object({
-  turnNo: z.number().int().min(0),
-  moveId: z.string(),
-  tapCategory: z.enum(['perfect', 'good', 'miss']),
+const JoinOptions = z.object({
+  wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'wallet must be an 0x address'),
+  speciesId: z.string().refine(isSpeciesId, 'unknown species'),
+  mode: z.enum(['quick', 'practice', 'private']).default('quick'),
+  marketId: z.string().max(24).optional(),
+  protocol: z.number().int().optional(),
 });
+type Join = z.infer<typeof JoinOptions>;
 
-interface ClientState {
-  msgCount: number;
-  lastMsgReset: number;
-  bot?: BrokerBot;
-  seatIndex: number;
+const LockMove = z.object({
+  turnNo: z.number().int().min(0).max(10_000),
+  moveId: z.string().min(1).max(32),
+  tap: z.enum(['perfect', 'good', 'miss']),
+});
+const TurnAck = z.object({ turnNo: z.number().int().min(0).max(10_000) });
+
+const ALL: SeatKey[] = ['A', 'B'];
+const CLAIM_LINGER_MS = 150_000;
+const MAX_IDLE_STRIKES = 3;
+
+/** Scale a wait down in tests; identity in production. */
+const T = (ms: number) => (config.fastTiming ? Math.max(15, Math.floor(ms * 0.02)) : ms);
+
+function pickBotSpecies(marketId: string | undefined, avoid: string): string {
+  const theme = getMarket(marketId ?? '')?.routeTheme ?? 'tech';
+  const table = ROUTE_TABLES[theme];
+  for (let i = 0; i < 8; i++) {
+    const id = pickSlot(table, () => cryptoRng.int(1_000_000) / 1_000_000).speciesId;
+    if (id !== avoid) return id;
+  }
+  return SPECIES_IDS.find((s) => s !== avoid) ?? SPECIES_IDS[0];
 }
 
-export class BattleRoom extends Room<BattleState> {
-  private rngSeed = crypto.randomBytes(16).toString('hex');
-  private clientData = new Map<Client, ClientState>();
-  private turnTimer?: ReturnType<typeof setTimeout>;
-  private seatCounter = 0;
-  private botClient?: { sessionId: string };
+/**
+ * One authoritative 1v1 battle. The client sends INPUTS only (a species pick, a move + tap bucket);
+ * the server owns stats, RNG, ordering, PP, HP and the result. A seat's chosen move is private until
+ * the turn resolves.
+ */
+export class BattleRoom extends Room<{ state: BattleState }> {
+  maxClients = 2;
+  autoDispose = true;
+  maxMessagesPerSecond = 20;
 
-  // Seeded RNG for auditability
-  private rngCounter = 0;
-  private serverRand(max: number): number {
-    const hash = crypto.createHash('sha256');
-    hash.update(this.rngSeed + ':' + this.rngCounter++);
-    const buf = hash.digest();
-    return buf.readUInt32BE(0) % max;
-  }
+  private engine?: BattleEngine;
+  private seatBySession = new Map<string, SeatKey>();
+  private joinOf = new Map<SeatKey, Join>();
+  private choices: Partial<Record<SeatKey, Choice>> = {};
+  private readies = new Set<SeatKey>();
+  private acks = new Set<SeatKey>();
+  private idleStrikes: Record<SeatKey, number> = { A: 0, B: 0 };
+  private botKey?: SeatKey;
+  private stamp = Date.now();
+  private started = false;
+  private finished = false;
+  private resolvingTurn = -1;
+  private claimRequested = false;
+  private lastClaim?: ClaimStatus;
+  private endInfo?: BattleEnd;
 
-  onCreate(options: any) {
-    this.maxClients = 2;
+  private botTimer?: Delayed;
+  private waitTicker?: Delayed;
+  private readyTimer?: Delayed;
+  private turnTimer?: Delayed;
+  private ackTimer?: Delayed;
+  private endTimer?: Delayed;
+  private waitDeadline = 0;
+
+  // ─────────────────────────────── lifecycle ───────────────────────────────
+
+  onCreate(options: { mode?: string; marketId?: string }) {
+    const mode = options?.mode === 'practice' || options?.mode === 'private' ? options.mode : 'quick';
     this.setState(new BattleState());
-    this.state.phase = 'INTRO';
-    this.state.turnNo = 0;
+    this.state.phase = 'WAITING';
+    this.state.mode = mode;
+    this.state.marketId = options?.marketId ?? '';
+    if (mode === 'private') this.setPrivate(true);
 
-    // Seed stock buffs from options (default 1.0)
-    this.state.tickerA = options?.tickerA ?? '';
-    this.state.tickerB = options?.tickerB ?? '';
-    this.state.stockBuffA = options?.stockBuffA ?? 1;
-    this.state.stockBuffB = options?.stockBuffB ?? 1;
-
-    // Register message handlers with rate-limit
-    this.onMessage('lockMove', (client, data) => {
-      if (!this.rateLimit(client)) return;
-      this.handleLockMove(client, data);
-    });
-    this.onMessage('flee', (client) => {
-      if (!this.rateLimit(client)) return;
-      this.handleFlee(client);
-    });
-    this.onMessage('requestVoucher', (client) => {
-      if (!this.rateLimit(client)) return;
-      this.handleRequestVoucher(client);
-    });
-
-    // After INTRO, transition to COMMAND
-    this.clock.setTimeout(() => {
-      this.state.phase = 'COMMAND';
-      this.startTurnTimer();
-    }, 3000);
+    this.onMessage(MSG.ready, (client) => this.onReady(client));
+    this.onMessage(MSG.lockMove, (client, raw) => this.onLockMove(client, raw));
+    this.onMessage(MSG.turnAck, (client, raw) => this.onTurnAck(client, raw));
+    this.onMessage(MSG.flee, (client) => this.onFlee(client));
+    this.onMessage(MSG.requestClaim, (client) => this.onRequestClaim(client));
   }
 
-  onJoin(client: Client, options: any) {
-    const seat = this.seatCounter++;
-    const cs: ClientState = {
-      msgCount: 0,
-      lastMsgReset: Date.now(),
-      seatIndex: seat,
-    };
-    this.clientData.set(client, cs);
-
-    const player = new PlayerState();
-    player.wallet = options?.wallet ?? `bot_${client.sessionId}`;
-    player.connected = true;
-    player.isBot = false;
-
-    // Initialize mon from options or default
-    const mon = new MonState();
-    mon.id = options?.monId ?? 'BROKER_A';
-    mon.affinity = options?.affinity ?? 'Electric';
-    mon.level = options?.level ?? 5;
-    mon.maxHp = options?.maxHp ?? 52;
-    mon.hp = mon.maxHp;
-    mon.atk = options?.atk ?? 48;
-    mon.def = options?.def ?? 40;
-    mon.spa = options?.spa ?? 65;
-    mon.spd = options?.spd ?? 50;
-    mon.spe = options?.spe ?? 55;
-    // Initialize PP
-    const learnset = options?.learnset ?? ['TACKLE', 'THUNDER', 'QUICK_ATTACK', 'GROWL'];
-    for (const moveId of learnset) {
-      const m = getMove(moveId);
-      mon.pp.set(moveId, m.pp);
+  async onAuth(_client: Client, options: unknown): Promise<Join> {
+    const parsed = JoinOptions.safeParse(options);
+    if (!parsed.success) throw new ServerError(4400, 'Invalid join options');
+    const o = parsed.data;
+    if (o.protocol !== undefined && o.protocol !== PROTOCOL_VERSION) {
+      throw new ServerError(4426, 'Your game is out of date. Refresh the page.');
     }
-    player.active = mon;
+    // One wallet can't fight itself for rewards (private rooms are for friends/testing).
+    if (this.state.mode !== 'private') {
+      for (const j of this.joinOf.values()) {
+        if (j.wallet.toLowerCase() === o.wallet.toLowerCase()) throw new ServerError(4409, 'That wallet is already in this match');
+      }
+    }
+    return o;
+  }
 
-    const key = seat === 0 ? 'A' : 'B';
-    this.state.players.set(key, player);
+  onJoin(client: Client, _options: unknown, auth: Join) {
+    const key: SeatKey = this.state.players.has('A') ? 'B' : 'A';
+    this.seatBySession.set(client.sessionId, key);
+    this.joinOf.set(key, auth);
+    this.addPlayer(key, buildMon(auth.speciesId, DEFAULT_LEVEL), auth.wallet, false, client.sessionId);
+    client.send(MSG.seat, { key, roomId: this.roomId });
 
-    // Bot slot handling
-    if (options?.isBot) {
-      player.isBot = true;
-      player.wallet = `bot_${client.sessionId}`;
-      cs.bot = new BrokerBot();
-      this.botClient = { sessionId: client.sessionId };
+    if (this.state.players.has('A') && this.state.players.has('B')) {
+      void this.onBothSeated();
+      return;
+    }
+    // Alone: wait for a human, then fall back to a Broker bot.
+    const mode = this.state.mode;
+    if (mode === 'practice') {
+      this.botTimer = this.clock.setTimeout(() => this.fillBot(), T(500));
+    } else if (mode === 'quick') {
+      const ms = config.queueBotMs ?? TIMING.QUEUE_BOT_MS;
+      this.waitDeadline = Date.now() + ms;
+      this.state.waitMs = ms;
+      this.botTimer = this.clock.setTimeout(() => this.fillBot(), ms);
+      this.waitTicker = this.clock.setInterval(() => {
+        this.state.waitMs = Math.max(0, this.waitDeadline - Date.now());
+      }, 500);
     }
   }
 
-  onDrop(client: Client, consented: boolean) {
-    const cs = this.clientData.get(client);
-    if (!cs) return;
-
-    if (!consented) {
-      // Allow reconnection for 30s
-      this.allowReconnection(client, 30).then(() => {
-        // Client reconnected - state is auto-synced by Colyseus
-        const key = cs.seatIndex === 0 ? 'A' : 'B';
-        const player = this.state.players.get(key);
-        if (player) player.connected = true;
-      }).catch(() => {
-        // 30s timeout - opponent wins
-        this.awardWin(cs.seatIndex === 0 ? 'B' : 'A');
-      });
-    } else {
-      // Consented leave - opponent wins immediately
-      this.awardWin(cs.seatIndex === 0 ? 'B' : 'A');
+  /** Unexpected disconnect: hold the seat, then forfeit if they don't return. */
+  async onDrop(client: Client) {
+    const key = this.seatBySession.get(client.sessionId);
+    if (!key) return;
+    if (this.finished || this.state.phase === 'WAITING') return; // onLeave cleans up
+    const p = this.state.players.get(key);
+    if (p) p.connected = false;
+    try {
+      await this.allowReconnection(client, config.reconnectSeconds);
+    } catch {
+      this.forfeit(key, 'disconnect');
     }
+  }
+
+  onReconnect(client: Client) {
+    const key = this.seatBySession.get(client.sessionId);
+    if (!key) return;
+    const p = this.state.players.get(key);
+    if (p) p.connected = true;
+    client.send(MSG.seat, { key, roomId: this.roomId });
+    // Re-send anything the client may have missed; state itself is snapshotted automatically.
+    if (this.endInfo) client.send(MSG.battleEnd, this.endInfo);
+    if (this.lastClaim) client.send(MSG.claimStatus, this.lastClaim);
+  }
+
+  onLeave(client: Client, code?: number) {
+    const key = this.seatBySession.get(client.sessionId);
+    if (!key) return;
+    if (this.state.phase === 'WAITING') {
+      this.state.players.delete(key);
+      this.joinOf.delete(key);
+      this.seatBySession.delete(client.sessionId);
+      this.botTimer?.clear();
+      this.waitTicker?.clear();
+      this.state.waitMs = 0;
+      return;
+    }
+    // Consented leave = the player quit; anything else = their connection dropped and never came back.
+    if (!this.finished) this.forfeit(key, code === CloseCode.CONSENTED ? 'forfeit' : 'disconnect');
   }
 
   onDispose() {
-    if (this.turnTimer) clearTimeout(this.turnTimer);
+    for (const t of [this.botTimer, this.waitTicker, this.readyTimer, this.turnTimer, this.ackTimer, this.endTimer]) t?.clear();
   }
 
-  private rateLimit(client: Client): boolean {
-    const cs = this.clientData.get(client);
-    if (!cs) return false;
-    const now = Date.now();
-    if (now - cs.lastMsgReset > 1000) {
-      cs.msgCount = 0;
-      cs.lastMsgReset = now;
-    }
-    cs.msgCount++;
-    if (cs.msgCount > MAX_MSG_PER_SEC) {
-      client.close(4000, 'rate limit exceeded');
-      return false;
-    }
-    return true;
+  // ───────────────────────────── seat / setup ──────────────────────────────
+
+  private addPlayer(key: SeatKey, mon: BrokerMon, wallet: string, isBot: boolean, sessionId = '') {
+    const p = new PlayerState();
+    p.sessionId = sessionId;
+    p.wallet = wallet;
+    p.ticker = getSpecies(mon.speciesId).ticker;
+    p.isBot = isBot;
+    p.connected = true;
+    p.locked = false;
+    const m = new MonState();
+    m.speciesId = mon.speciesId; m.name = mon.name; m.affinity = mon.affinity; m.level = mon.level;
+    m.maxHp = mon.maxHp; m.atk = mon.atk; m.def = mon.def; m.spa = mon.spa; m.spd = mon.spd; m.spe = mon.spe;
+    for (const id of mon.moves) m.moves.push(id);
+    p.active = m;
+    this.state.players.set(key, p);
+    this.pushMon(key, mon);
   }
 
-  private handleLockMove(client: Client, data: any) {
-    if (this.state.phase !== 'COMMAND') return;
-    if (this.state.winner) return;
-
-    const cs = this.clientData.get(client);
-    if (!cs) return;
-
-    const key = cs.seatIndex === 0 ? 'A' : 'B';
-    const player = this.state.players.get(key);
-    if (!player || player.locked) return;
-
-    // Validate with Zod
-    const parsed = LockMoveSchema.safeParse(data);
-    if (!parsed.success) return;
-    const { turnNo, moveId, tapCategory } = parsed.data;
-
-    // Anti-cheat: turnNo must match
-    if (turnNo !== this.state.turnNo) return;
-
-    // Move must be legal
-    const move = getMove(moveId);
-    if (move.id !== moveId && moveId !== 'STRUGGLE') return;
-
-    // PP check (STRUGGLE bypass)
-    if (moveId !== 'STRUGGLE') {
-      const pp = player.active.pp.get(moveId) ?? 0;
-      if (pp <= 0) return;
-    }
-
-    // Alive check
-    if (player.active.hp <= 0) return;
-
-    // All PP = 0 → auto-Struggle
-    let finalMove = moveId;
-    const ppEntries: Record<string, number> = {};
-    player.active.pp.forEach((v, k) => { ppEntries[k] = v; });
-    if (legalMoves(ppEntries).length === 0 && moveId !== 'STRUGGLE') {
-      finalMove = 'STRUGGLE';
-    }
-
-    // Lock it in
-    player.locked = true;
-    player.lockedMove = finalMove;
-    player.lockedTap = tapCategory;
-
-    // Consume PP
-    if (finalMove !== 'STRUGGLE') {
-      const pp = player.active.pp.get(finalMove) ?? 0;
-      player.active.pp.set(finalMove, Math.max(0, pp - 1));
-    }
-
-    // Check if both locked → resolve
-    const players = ['A', 'B'];
-    const allLocked = players.every(k => this.state.players.get(k)?.locked);
-    if (allLocked) {
-      this.resolveTurn();
-    }
+  private pushMon(key: SeatKey, mon: BrokerMon) {
+    const m = this.state.players.get(key)!.active;
+    m.hp = mon.hp;
+    for (const [id, n] of Object.entries(mon.pp)) m.pp.set(id, n);
+    m.atkStage = mon.stages.atk; m.defStage = mon.stages.def; m.spaStage = mon.stages.spa;
+    m.spdStage = mon.stages.spd; m.speStage = mon.stages.spe;
   }
 
-  private handleFlee(client: Client) {
-    if (this.state.phase !== 'COMMAND') return;
-    const cs = this.clientData.get(client);
-    if (!cs) return;
-    const key = cs.seatIndex === 0 ? 'A' : 'B';
-    const player = this.state.players.get(key);
-    if (!player || player.locked) return;
-
-    // Flee: 50% chance
-    const fled = this.serverRand(2) === 0;
-    if (fled) {
-      this.state.winner = cs.seatIndex === 0 ? 'B' : 'A';
-      this.state.phase = 'END';
-      this.broadcast('battleEnd', {
-        winner: this.state.winner,
-        stake: 0,
-        priceProof: '',
-      });
-      if (this.turnTimer) clearTimeout(this.turnTimer);
-    } else {
-      // Failed flee - wasted turn
-      player.locked = true;
-      player.lockedMove = 'STRUGGLE';
-      player.lockedTap = 'good';
-      const allLocked = ['A', 'B'].every(k => this.state.players.get(k)?.locked);
-      if (allLocked) this.resolveTurn();
-    }
+  private fillBot() {
+    if (this.started || this.state.players.has('B') || this.state.players.size === 0) return;
+    const humanKey: SeatKey = this.state.players.has('A') ? 'A' : 'B';
+    const botKey = other(humanKey);
+    const human = this.state.players.get(humanKey)!;
+    const speciesId = pickBotSpecies(this.state.marketId, human.active.speciesId);
+    this.botKey = botKey;
+    this.readies.add(botKey);
+    this.acks.add(botKey);
+    this.addPlayer(botKey, buildMon(speciesId, DEFAULT_LEVEL), '', true);
+    void this.onBothSeated();
   }
 
-  private handleRequestVoucher(client: Client) {
-    // Placeholder - will sign EIP-712 voucher in web3 module
-    this.broadcast('voucher', {
-      claim: { to: '', token: '', amount: 0, brokerId: 0, roomId: this.roomId, nonce: 0, deadline: 0 },
-      sig: '0x',
-    });
-  }
+  private async onBothSeated() {
+    if (this.started) return;
+    this.started = true;
+    this.botTimer?.clear();
+    this.waitTicker?.clear();
+    this.state.waitMs = 0;
+    await this.lock();
 
-  private startTurnTimer() {
-    this.state.turnDeadline = Date.now() + TURN_TIME_MS;
-    if (this.turnTimer) clearTimeout(this.turnTimer);
-    this.turnTimer = setTimeout(() => {
-      this.autoLockExpired();
-    }, TURN_TIME_MS);
-  }
-
-  private autoLockExpired() {
-    const players = ['A', 'B'] as const;
-    for (const key of players) {
-      const p = this.state.players.get(key);
-      if (p && !p.locked && p.active.hp > 0) {
-        // Auto-pick first legal move at 'good' tap
-        const ppEntries: Record<string, number> = {};
-        p.active.pp.forEach((v, k) => { ppEntries[k] = v; });
-        const moves = legalMoves(ppEntries);
-        p.locked = true;
-        p.lockedMove = moves.length > 0 ? moves[0] : 'STRUGGLE';
-        p.lockedTap = 'good';
-
-        // Consume PP
-        if (p.lockedMove !== 'STRUGGLE') {
-          const pp = p.active.pp.get(p.lockedMove) ?? 0;
-          p.active.pp.set(p.lockedMove, Math.max(0, pp - 1));
-        }
-      }
-    }
-    this.resolveTurn();
-  }
-
-  private resolveTurn() {
-    if (this.turnTimer) clearTimeout(this.turnTimer);
-
-    const pA = this.state.players.get('A')!;
-    const pB = this.state.players.get('B')!;
-
-    // Turn order: priority desc → speed desc → random tie
-    const moveA = getMove(pA.lockedMove);
-    const moveB = getMove(pB.lockedMove);
-
-    const orderA = { priority: moveA.priority, speed: pA.active.spe, key: 'A' as const };
-    const orderB = { priority: moveB.priority, speed: pB.active.spe, key: 'B' as const };
-
-    const first = orderA.priority > orderB.priority ? orderA
-      : orderB.priority > orderA.priority ? orderB
-      : orderA.speed > orderB.speed ? orderA
-      : orderB.speed > orderA.speed ? orderB
-      : this.serverRand(2) === 0 ? orderA : orderB;
-
-    const second = first.key === 'A' ? orderB : orderA;
-    const attacker = first.key === 'A' ? pA : pB;
-    const defender = first.key === 'A' ? pB : pA;
-    const atkKey = first.key;
-    const defKey = first.key === 'A' ? 'B' : 'A';
-
-    const events: any[] = [];
-
-    // Execute first attacker
-    const event1 = this.executeMove(attacker, defender, atkKey, defKey);
-    events.push(event1);
-
-    // Check if defender fainted
-    if (defender.active.hp > 0) {
-      // Execute second attacker
-      const event2 = this.executeMove(defender, attacker, defKey, atkKey);
-      events.push(event2);
-    }
-
-    // Faint check → END
-    const faintedA = pA.active.hp <= 0;
-    const faintedB = pB.active.hp <= 0;
-
-    if (faintedA || faintedB) {
-      this.state.winner = faintedA ? 'B' : 'A';
-      this.state.phase = 'END';
-      this.broadcast('battleEnd', {
-        winner: this.state.winner,
-        stake: 0,
-        priceProof: '',
-      });
-    } else {
-      this.state.turnNo++;
-      this.state.phase = 'COMMAND';
-      this.startTurnTimer();
-    }
-
-    // Reset locks
-    pA.locked = false;
-    pB.locked = false;
-    pA.lockedMove = '';
-    pB.lockedMove = '';
-    pA.lockedTap = '';
-    pB.lockedTap = '';
-
-    // Broadcast resolved turn
-    this.broadcast('turnResolved', {
-      turnNo: this.state.turnNo - (faintedA || faintedB ? 0 : 1),
-      events,
-    });
-  }
-
-  private executeMove(
-    attacker: PlayerState,
-    defender: PlayerState,
-    atkKey: 'A' | 'B',
-    defKey: 'A' | 'B',
-  ): any {
-    const move = getMove(attacker.lockedMove);
-    const tapCategory = attacker.lockedTap as 'perfect' | 'good' | 'miss';
-    const stockBuff = atkKey === 'A' ? this.state.stockBuffA : this.state.stockBuffB;
-
-    const event: any = {
-      by: atkKey,
-      move: move.id,
-      dmg: 0,
-      crit: false,
-      tapMult: 1,
-      typeMult: 1,
-      hpAfter: defender.active.hp,
-      ppAfter: 0,
-      msg: '',
-      fx: '',
+    const monOf = (k: SeatKey): BrokerMon => {
+      const m = this.state.players.get(k)!.active;
+      return buildMon(m.speciesId, m.level);
     };
-
-    if (move.category === 'status') {
-      // Growl: -1 target Atk stage
-      if (move.id === 'GROWL') {
-        defender.active.atkStage = Math.max(-6, defender.active.atkStage - 1);
-        event.msg = `${attacker.active.id} used ${move.name}! ${defender.active.id}'s Attack fell!`;
-      }
-      event.ppAfter = attacker.active.pp.get(move.id) ?? 0;
-      return event;
-    }
-
-    // Accuracy check
-    const accRoll = this.serverRand(100);
-    if (!accuracyCheck(move.accuracy, accRoll)) {
-      event.msg = `${attacker.active.id}'s ${move.name} missed!`;
-      event.fx = 'miss';
-      event.ppAfter = attacker.active.pp.get(move.id) ?? 0;
-      return event;
-    }
-
-    // Extra miss chance from tap miss
-    if (tapCategory === 'miss' && this.serverRand(100) < 10) {
-      event.msg = `${attacker.active.id}'s ${move.name} missed!`;
-      event.fx = 'miss';
-      event.ppAfter = attacker.active.pp.get(move.id) ?? 0;
-      return event;
-    }
-
-    // Compute damage
-    const atkStat = move.category === 'physical' ? attacker.active.atk : attacker.active.spa;
-    const defStat = move.category === 'physical' ? defender.active.def : defender.active.spd;
-    const defStage = move.category === 'physical' ? defender.active.defStage : 0;
-
-    const result = computeDamage({
-      atkLevel: attacker.active.level,
-      atkStat,
-      atkAffinity: attacker.active.affinity as any,
-      defStat,
-      defStage,
-      defAffinity: defender.active.affinity as any,
-      move,
-      tapCategory,
-      stockBuff,
-      critRoll: this.serverRand(16),
-      spreadRoll: this.serverRand(16),
+    const [mA, mB] = await Promise.all([
+      prices.mood(this.state.players.get('A')!.active.speciesId),
+      prices.mood(this.state.players.get('B')!.active.speciesId),
+    ]);
+    const seat = (k: SeatKey, buff: number) => ({
+      key: k, mon: monOf(k), ticker: this.state.players.get(k)!.ticker, buff,
     });
+    this.engine = new BattleEngine(seat('A', mA.buff), seat('B', mB.buff), cryptoRng);
+    this.state.moodA = mA.buff;
+    this.state.moodB = mB.buff;
+    this.broadcast(MSG.mood, { A: mA.buff, B: mB.buff, pctA: mA.pct, pctB: mB.pct });
 
-    defender.active.hp = Math.max(0, defender.active.hp - result.damage);
-
-    event.dmg = result.damage;
-    event.crit = result.isCrit;
-    event.tapMult = result.tapMult;
-    event.typeMult = result.typeMultVal;
-    event.hpAfter = defender.active.hp;
-    event.ppAfter = attacker.active.pp.get(move.id) ?? 0;
-
-    // Build message
-    let msg = `${attacker.active.id} used ${move.name}!`;
-    if (result.isCrit) msg += ' Critical hit!';
-    if (result.typeMultVal > 1) msg += " It's super effective!";
-    if (result.typeMultVal < 1) msg += " It's not very effective...";
-    event.msg = msg;
-
-    // Struggle recoil
-    if (move.id === 'STRUGGLE') {
-      const recoil = Math.max(1, Math.floor(attacker.active.maxHp / 4));
-      attacker.active.hp = Math.max(1, attacker.active.hp - recoil);
-    }
-
-    return event;
+    this.state.phase = 'INTRO';
+    // Start anyway if a client never reports ready (background tab, slow load).
+    this.readyTimer = this.clock.setTimeout(() => this.beginIntro(), T(TIMING.READY_TIMEOUT_MS));
+    this.maybeBegin();
   }
 
-  private awardWin(winnerKey: string) {
-    this.state.winner = winnerKey;
+  // ─────────────────────────────── messages ────────────────────────────────
+
+  private seatOf(client: Client): SeatKey | undefined {
+    return this.seatBySession.get(client.sessionId);
+  }
+
+  private humanSeats(): SeatKey[] {
+    return ALL.filter((k) => k !== this.botKey && this.state.players.has(k));
+  }
+
+  private onReady(client: Client) {
+    const key = this.seatOf(client);
+    if (!key || this.state.phase !== 'INTRO') return;
+    this.readies.add(key);
+    this.maybeBegin();
+  }
+
+  private maybeBegin() {
+    if (this.state.phase !== 'INTRO' || !this.engine) return;
+    if (ALL.every((k) => this.readies.has(k))) this.beginIntro();
+  }
+
+  private introDone = false;
+  private beginIntro() {
+    if (this.introDone || !this.engine) return;
+    this.introDone = true;
+    this.readyTimer?.clear();
+    this.clock.setTimeout(() => this.openCommand(), T(TIMING.INTRO_MS));
+  }
+
+  private onLockMove(client: Client, raw: unknown) {
+    const key = this.seatOf(client);
+    if (!key || !this.engine) return;
+    const parsed = LockMove.safeParse(raw);
+    if (!parsed.success) return this.reject(client, 'Malformed move.');
+    const { turnNo, moveId, tap } = parsed.data;
+    if (this.state.phase !== 'COMMAND' || this.finished) return this.reject(client, 'Not accepting moves right now.');
+    if (turnNo !== this.engine.turnNo) return this.reject(client, 'That turn is already over.');
+    if (this.choices[key]) return; // duplicate lock — first commit wins
+    if (!this.engine.isLegal(key, moveId)) return this.reject(client, 'That move is not available.');
+    this.idleStrikes[key] = 0;
+    this.lockChoice(key, { moveId, tap: tap as TapCategory });
+  }
+
+  private reject(client: Client, reason: string) {
+    client.send(MSG.rejected, { reason });
+  }
+
+  private lockChoice(key: SeatKey, choice: Choice) {
+    if (this.choices[key] || this.state.phase !== 'COMMAND') return;
+    this.choices[key] = choice;
+    const p = this.state.players.get(key);
+    if (p) p.locked = true;
+    if (ALL.every((k) => this.choices[k])) this.resolve();
+  }
+
+  private onFlee(client: Client) {
+    const key = this.seatOf(client);
+    if (!key || this.finished || !this.engine) return;
+    // Quitting counts at any point in the fight, including while animations play.
+    if (this.state.phase === 'WAITING' || this.state.phase === 'END') return;
+    this.forfeit(key, 'flee');
+  }
+
+  private onTurnAck(client: Client, raw: unknown) {
+    const key = this.seatOf(client);
+    const parsed = TurnAck.safeParse(raw);
+    if (!key || !parsed.success || parsed.data.turnNo !== this.resolvingTurn) return;
+    this.acks.add(key);
+    this.checkAcks();
+  }
+
+  // ───────────────────────────── turn machinery ────────────────────────────
+
+  private turnMs(): number {
+    return this.state.mode === 'practice' ? TIMING.PRACTICE_TURN_MS : TIMING.TURN_MS;
+  }
+
+  private openCommand() {
+    if (!this.engine || this.finished) return;
+    this.choices = {};
+    for (const k of ALL) { const p = this.state.players.get(k); if (p) p.locked = false; }
+    const ms = this.turnMs();
+    this.state.turnNo = this.engine.turnNo;
+    this.state.turnMs = ms;
+    this.state.phase = 'COMMAND';
+    this.turnTimer?.clear();
+    // +250ms grace so a tap landing on the buzzer still counts.
+    this.turnTimer = this.clock.setTimeout(() => this.onTurnExpired(), T(ms) + T(250));
+
+    if (this.botKey) {
+      const key = this.botKey;
+      const think = TIMING.BOT_THINK_MIN_MS + cryptoRng.int(TIMING.BOT_THINK_MAX_MS - TIMING.BOT_THINK_MIN_MS);
+      this.clock.setTimeout(() => {
+        if (this.state.phase === 'COMMAND' && !this.finished && this.engine) {
+          this.lockChoice(key, chooseBotMove(this.engine, key, cryptoRng));
+        }
+      }, T(think));
+    }
+  }
+
+  private onTurnExpired() {
+    if (this.state.phase !== 'COMMAND' || !this.engine || this.finished) return;
+    for (const k of ALL) {
+      if (this.choices[k]) continue;
+      // A dropped player is covered by the reconnect window, not the AFK counter.
+      const connected = this.state.players.get(k)?.connected !== false;
+      if (connected) this.idleStrikes[k]++;
+      if (this.idleStrikes[k] >= MAX_IDLE_STRIKES && k !== this.botKey) {
+        this.forfeit(k, 'forfeit'); // AFK: don't hold the opponent hostage
+        return;
+      }
+      this.lockChoice(k, this.engine.autoChoice(k));
+    }
+  }
+
+  private resolve() {
+    const engine = this.engine;
+    if (!engine || this.finished || this.state.phase !== 'COMMAND') return;
+    this.turnTimer?.clear();
+    this.state.phase = 'RESOLVE';
+    const turnNo = engine.turnNo;
+    const events = engine.resolveTurn(this.choices as Record<SeatKey, Choice>);
+    this.choices = {};
+    for (const k of ALL) this.pushMon(k, engine.seats[k].mon);
+    this.resolvingTurn = turnNo;
+    this.acks = new Set(this.botKey ? [this.botKey] : []);
+    this.broadcast(MSG.turnResolved, { turnNo, events });
+
+    const wait = Math.min(
+      TIMING.RESOLVE_BASE_MS + events.length * TIMING.RESOLVE_PER_EVENT_MS + (engine.winner ? 1500 : 0),
+      15_000,
+    );
+    this.ackTimer?.clear();
+    this.ackTimer = this.clock.setTimeout(() => this.afterResolve(), T(wait));
+    this.checkAcks();
+  }
+
+  private checkAcks() {
+    if (this.state.phase !== 'RESOLVE') return;
+    const waiting = this.humanSeats().filter((k) => this.state.players.get(k)?.connected && !this.acks.has(k));
+    if (waiting.length === 0) this.afterResolve();
+  }
+
+  private afterResolve() {
+    if (this.state.phase !== 'RESOLVE') return;
+    this.ackTimer?.clear();
+    if (this.engine?.winner) this.endBattle();
+    else this.openCommand();
+  }
+
+  // ─────────────────────────────── ending ──────────────────────────────────
+
+  private forfeit(loser: SeatKey, reason: EndReason) {
+    if (this.finished || !this.engine) {
+      // Left before the engine existed (e.g. during price fetch): just close out.
+      if (!this.finished) { this.finished = true; this.state.phase = 'END'; this.endTimer = this.clock.setTimeout(() => this.disconnect(), 1000); }
+      return;
+    }
+    this.engine.forfeit(loser, reason);
+    this.turnTimer?.clear();
+    this.ackTimer?.clear();
+    this.endBattle();
+  }
+
+  private endBattle() {
+    const engine = this.engine;
+    if (!engine || this.finished || !engine.winner) return;
+    this.finished = true;
+    this.turnTimer?.clear();
+    this.ackTimer?.clear();
+    const winner = engine.winner;
+    const loser = other(winner);
+    const winP = this.state.players.get(winner)!;
+    const loseSp = getSpecies(engine.seats[loser].mon.speciesId);
+    const claimable = !winP.isBot && this.state.mode !== 'practice' && Boolean(winP.wallet) && claims.enabled;
+
+    this.state.winner = winner;
     this.state.phase = 'END';
-    this.broadcast('battleEnd', {
-      winner: winnerKey,
-      stake: 0,
-      priceProof: '',
-    });
-    if (this.turnTimer) clearTimeout(this.turnTimer);
+    this.endInfo = {
+      winner, reason: engine.endReason ?? 'faint', turns: engine.turnNo, roomId: this.roomId,
+      ticker: loseSp.ticker, claimable,
+    };
+    this.broadcast(MSG.battleEnd, this.endInfo);
+    this.endTimer = this.clock.setTimeout(() => this.disconnect(), CLAIM_LINGER_MS);
+  }
+
+  private onRequestClaim(client: Client) {
+    const key = this.seatOf(client);
+    const send = (s: ClaimStatus) => { this.lastClaim = s; try { client.send(MSG.claimStatus, s); } catch { /* client gone; tx continues */ } };
+    if (!key || !this.engine || !this.finished || !this.endInfo) return this.reject(client, 'The battle is not over.');
+    if (key !== this.endInfo.winner) return send({ state: 'ineligible', error: 'Only the winner can claim the prize.' });
+    if (!this.endInfo.claimable) return send({ state: 'ineligible', error: claims.enabled ? 'This match does not pay rewards.' : 'Rewards are not live on this server yet.' });
+    if (this.claimRequested) { if (this.lastClaim) client.send(MSG.claimStatus, this.lastClaim); return; }
+    this.claimRequested = true;
+
+    const loser = other(key);
+    const winP = this.state.players.get(key)!;
+    const losP = this.state.players.get(loser)!;
+    const loseSp = getSpecies(this.engine.seats[loser].mon.speciesId);
+    const humanFoe = !losP.isBot;
+    void claims.claim({
+      roomId: this.roomId,
+      roomStamp: this.stamp,
+      winner: winP.wallet as `0x${string}`,
+      loser: humanFoe ? (losP.wallet as `0x${string}`) : undefined,
+      ticker: loseSp.ticker,
+      prizeSpeciesId: loseSp.id,
+      humanFoe,
+      captureSpeciesNum: loseSp.num,
+      level: this.engine.seats[key].mon.level,
+    }, send);
   }
 }

@@ -74,28 +74,38 @@ export interface BrokerMon {
   pp: Record<string, number>;
 }
 
+export type SeatKey = 'A' | 'B';
+
+export interface StatChange {
+  target: SeatKey;
+  stat: StatKey;
+  /** The delta requested by the move (e.g. -1, +2). */
+  stages: number;
+  /** The stage after clamping to [-6, 6]. */
+  now: number;
+}
+
 export interface TurnEvent {
   /** Seat of the acting player. */
-  by: 'A' | 'B';
+  by: SeatKey;
   move: string;
-  /** Damage dealt to the target (0 for status / miss). */
+  moveName: string;
+  /** Damage actually dealt to the target (0 for status / miss). */
   dmg: number;
   crit: boolean;
   tapMult: number;
   typeMult: number;
-  /** Target HP after this event. */
-  hpAfter: number;
-  /** Actor PP for this move after this event. */
+  /** Both seats' HP after this event — clients animate bars from this, never from raw state. */
+  hp: Record<SeatKey, number>;
+  /** Actor's remaining PP for this move after this event. */
   ppAfter: number;
+  /** Dialog lines separated by '\n', in the order they should be shown. */
   msg: string;
   /** 'miss' | 'stat' | 'recoil' | '' — drives client FX. */
   fx?: string;
-  /** Present on stat-change events: who was affected and the resulting stage. */
-  stat?: { target: 'A' | 'B'; stat: StatKey; stages: number; now: number };
-  /** Actor HP after recoil (Struggle). */
-  actorHpAfter?: number;
-  /** True when the target fainted from this event. */
-  faint?: boolean;
+  stats?: StatChange[];
+  /** Seat that fainted as a result of this event. */
+  faint?: SeatKey;
 }
 
 export interface TurnResolved {

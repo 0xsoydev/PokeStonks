@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   typeMult, AFFINITIES, MOVES, getMove, legalMoves, isKnownMove,
-  SPECIES, SPECIES_LIST, getSpecies, buildMon, calcStat, calcHp, stageMultiplier, applyStage,
+  SPECIES, SPECIES_LIST, getSpecies, buildMon, calcStat, calcHp, calcHpCanonical, HP_SCALE, stageMultiplier, applyStage,
   computeDamage, accuracyCheck, TAP_MULT, stockBuff, buffFromSpotEma, deviationPct,
   rollEncounter, ROUTE_TABLES, GRASS_SLOT_WEIGHTS, MARKETS, effectiveSpeed,
 } from './index';
@@ -65,7 +65,8 @@ describe('species roster', () => {
 describe('stats', () => {
   it('Gen-3 formulas at L50, IV 15', () => {
     expect(calcStat(105, 50)).toBe(117);
-    expect(calcHp(100, 50)).toBe(167);
+    expect(calcHpCanonical(100, 50)).toBe(167);
+    expect(calcHp(100, 50)).toBe(Math.floor(167 * HP_SCALE));
   });
   it('stage multipliers', () => {
     expect(stageMultiplier(0)).toBe(1);

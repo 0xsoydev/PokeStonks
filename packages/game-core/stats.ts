@@ -18,9 +18,21 @@ export function calcStat(base: number, level: number): number {
   return Math.floor(((2 * base + IV) * level) / 100) + 5;
 }
 
-/** Gen-3 HP formula. */
-export function calcHp(base: number, level: number): number {
+/**
+ * Pacing constant for 1v1. Mainline matches are 6v6 (~15 turns total); ours is a single mon a side,
+ * so HP is scaled to land a typical fight around 6-8 turns. The damage formula stays canonical,
+ * so type matchups, STAB, crits and stages all mean exactly what they do in the games.
+ */
+export const HP_SCALE = 2.6;
+
+/** Gen-3 HP formula exactly as in the mainline games (before pacing). */
+export function calcHpCanonical(base: number, level: number): number {
   return Math.floor(((2 * base + IV) * level) / 100) + level + 10;
+}
+
+/** Battle HP: canonical Gen-3 HP times the 1v1 pacing scale. */
+export function calcHp(base: number, level: number): number {
+  return Math.floor(calcHpCanonical(base, level) * HP_SCALE);
 }
 
 export function freshStages(): Stages {

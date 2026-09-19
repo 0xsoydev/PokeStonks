@@ -1,9 +1,9 @@
-import type { TapCategory, TurnResolved } from './types';
+import type { TapCategory, TurnResolved, SeatKey } from './types';
 
 /** Bump when a breaking wire change ships; server rejects mismatching clients. */
 export const PROTOCOL_VERSION = 1;
 
-export type SeatKey = 'A' | 'B';
+export type { SeatKey };
 export type BattleMode = 'quick' | 'practice' | 'private';
 
 export const ROOM_NAME = 'battle';
@@ -42,6 +42,8 @@ export interface BattleJoinOptions {
 export interface ClientMessages {
   ready: Record<string, never>;
   lockMove: { turnNo: number; moveId: string; tap: TapCategory };
+  /** Client finished playing a turn's animations; the server opens the next COMMAND when both ack. */
+  turnAck: { turnNo: number };
   flee: Record<string, never>;
   requestClaim: Record<string, never>;
 }
@@ -53,7 +55,7 @@ export interface BattleEnd {
   reason: EndReason;
   turns: number;
   roomId: string;
-  /** Winner's ticker, used for the claim. */
+  /** The prize: the LOSER's ticker — you win the stock you beat. */
   ticker: string;
   /** Whether a claim voucher can be issued (human winner with a wallet, non-practice). */
   claimable: boolean;
@@ -72,7 +74,8 @@ export interface ClaimStatus {
 
 /** Server -> client messages. */
 export interface ServerMessages {
-  /** Sent right after join so the client knows its seat. */
+  /** Convenience only — may arrive before a handler is registered. The source of truth is
+   *  `state.players[k].sessionId === room.sessionId`. */
   seat: { key: SeatKey; roomId: string };
   turnResolved: TurnResolved;
   battleEnd: BattleEnd;
@@ -85,6 +88,7 @@ export interface ServerMessages {
 
 export const MSG = {
   ready: 'ready',
+  turnAck: 'turnAck',
   lockMove: 'lockMove',
   flee: 'flee',
   requestClaim: 'requestClaim',
