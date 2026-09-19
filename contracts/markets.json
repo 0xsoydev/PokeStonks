@@ -1,0 +1,17 @@
+{
+  "pyth": "0x2880aB155794e7179c9eE2e38200202908C17B43",
+  "markets": [
+    { "speciesId": 1,  "symbol": "AAPL", "name": "Apple",     "affinity": 0, "feedId": "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688" },
+    { "speciesId": 2,  "symbol": "MSFT", "name": "Microsoft", "affinity": 0, "feedId": "0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1" },
+    { "speciesId": 3,  "symbol": "TSLA", "name": "Tesla",     "affinity": 1, "feedId": "0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1" },
+    { "speciesId": 4,  "symbol": "NVDA", "name": "Nvidia",    "affinity": 1, "feedId": "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593" },
+    { "speciesId": 5,  "symbol": "XOM",  "name": "Exxon",     "affinity": 2, "feedId": "0x4a1a12070192e8db9a89ac235bb032342a390dde39389b4ee1ba8e41e7eae5d8" },
+    { "speciesId": 6,  "symbol": "CVX",  "name": "Chevron",   "affinity": 2, "feedId": "0xf464e36fd4ef2f1c3dc30801a9ab470dcdaaa0af14dd3cf6ae17a7fca9e051c5" },
+    { "speciesId": 7,  "symbol": "GME",  "name": "GameStop",  "affinity": 3, "feedId": "0x6f9cd89ef1b7fd39f667101a91ad578b6c6ace4579d5f7f285a4b06aa4504be6" },
+    { "speciesId": 8,  "symbol": "AMD",  "name": "AMD",       "affinity": 3, "feedId": "0x3622e381dbca2efd1859253763b1adc63f7f9abb8e76da1aa8e638a57ccde93e" },
+    { "speciesId": 9,  "symbol": "AMZN", "name": "Amazon",    "affinity": 4, "feedId": "0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a" },
+    { "speciesId": 10, "symbol": "NKE",  "name": "Nike",      "affinity": 4, "feedId": "0x67649450b4ca4bfff97cbaf96d2fd9e40f6db148cb65999140154415e4378e14" },
+    { "speciesId": 11, "symbol": "COIN", "name": "Coinbase",  "affinity": 5, "feedId": "0xfee33f2a978bf32dd6b662b65ba8083c6773b494f8401194ec1870c640860245" },
+    { "speciesId": 12, "symbol": "MSTR", "name": "Strategy",  "affinity": 5, "feedId": "0xe1e80251e5f5184f2195008382538e847fafc36f751896889dd3d1b1f6111f09" }
+  ]
+}

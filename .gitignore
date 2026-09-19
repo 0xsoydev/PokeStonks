@@ -37,3 +37,8 @@ apps/server/data/
 
 # TS incremental
 *.tsbuildinfo
+
+# secrets
+contracts/.env
+apps/server/.env
+*.key
