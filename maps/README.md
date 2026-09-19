@@ -21,7 +21,7 @@ maps/
 
 ## Controls
 
-- WASD / arrow keys — walk
+- Arrow keys — walk
 - Click / tap ground, or drag — click-to-move
 - Scroll — zoom (1x–3.5x)
 - Tap a glowing pin — inspect the stock (battle hook: `selected` state in VillageMap)

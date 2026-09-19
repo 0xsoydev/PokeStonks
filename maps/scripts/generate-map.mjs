@@ -34,6 +34,7 @@ const DIRT = ['04', '17', '18', '29', '31', '51', '61'].map(
 );
 const SAND = ['09', '19', '34', '49'].map((n) => `tiles/FieldsTile_${n}.png`);
 const groundTiles = [...new Set([...GRASS, ...DIRT, ...SAND])];
+const GRASS_SET = new Set(GRASS);
 const gi = (img) => groundTiles.indexOf(img);
 
 // Measured sprite sizes (w x h, px). Anchor for every object is feet-center (x, y).
@@ -165,14 +166,30 @@ for (let i = 0; i < 12; i++) {
   objects.push(obj(`objects/2 Stone/${n}.png`, sx, sy));
 }
 
-// grass tufts (walk-through, no collision)
-for (let i = 0; i < 40; i++) {
+// grass tufts (walk-through, no collision) — clustered on grass ground only
+let placed = 0;
+let guard = 0;
+while (placed < 130 && guard++ < 5000) {
   const n = 1 + Math.floor(rand() * 6);
-  objects.push(
-    obj(`objects/5 Grass/${n}.png`, 70 + rand() * (WORLD_W - 140), 70 + rand() * (WORLD_H - 140), {
-      solid: false,
-    }),
-  );
+  const cx = 70 + rand() * (WORLD_W - 140);
+  const cy = 70 + rand() * (WORLD_H - 140);
+  const at = (px, py) => {
+    const tx = Math.floor(px / TILE);
+    const ty = Math.floor(py / TILE);
+    return (
+      tx > 0 && ty > 0 && tx < COLS - 1 && ty < ROWS - 1 &&
+      GRASS_SET.has(groundTiles[ground[ty][tx]])
+    );
+  };
+  if (!at(cx, cy)) continue;
+  const cluster = 2 + Math.floor(rand() * 4);
+  for (let c = 0; c < cluster && placed < 130; c++) {
+    const px = cx + (rand() - 0.5) * 60;
+    const py = cy + (rand() - 0.5) * 60;
+    if (!at(px, py)) continue;
+    objects.push(obj(`objects/5 Grass/${n}.png`, px, py, { solid: false }));
+    placed++;
+  }
 }
 
 // ---- stock pins (tower pads, walkable — catch by clicking) ----

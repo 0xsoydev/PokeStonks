@@ -78,7 +78,15 @@ export default function VillageMap() {
     for (const p of MAP.pins) urls.add(`${MAP.tileBase}/${p.pad}`);
 
     // Mutable game state (refs — no react re-renders in the loop).
-    const player = { x: MAP.spawn.x, y: MAP.spawn.y, fx: 0, fy: 1 };
+    type Facing = 'down' | 'up' | 'left' | 'right';
+    const player = {
+      x: MAP.spawn.x,
+      y: MAP.spawn.y,
+      facing: 'down' as Facing,
+      phase: 0, // walk-cycle phase
+      amp: 0, // smoothed 0..1 walk intensity (legs ease in/out)
+      moving: false,
+    };
     const keys = new Set<string>();
     const moveTarget = { active: false, x: 0, y: 0 };
     const cam = { x: 0, y: 0 };
@@ -109,7 +117,7 @@ export default function VillageMap() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
-      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'].includes(k)) {
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) {
         keys.add(k);
         moveTarget.active = false; // keys override click-to-move
         e.preventDefault();
@@ -164,28 +172,87 @@ export default function VillageMap() {
     ro.observe(container);
 
     const drawPlayer = (c: CanvasRenderingContext2D) => {
+      const { x, y, facing, phase, amp, moving } = player;
+      const bob = Math.abs(Math.sin(phase)) * 1.6 * amp; // body rises/falls each step
+      const legSwing = Math.sin(phase) * 3.4 * amp; // alternating stride
+      const dirX = facing === 'left' ? -1 : facing === 'right' ? 1 : 0;
+
       // shadow
       c.fillStyle = 'rgba(0,0,0,0.3)';
       c.beginPath();
-      c.ellipse(player.x, player.y, 10, 4, 0, 0, Math.PI * 2);
+      c.ellipse(x, y, 9, 3.6, 0, 0, Math.PI * 2);
       c.fill();
-      // cloak body
-      c.fillStyle = '#0ea5e9';
-      c.beginPath();
-      c.arc(player.x, player.y - 12, 9, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = '#0369a1';
-      c.fillRect(player.x - 9, player.y - 12, 18, 10);
-      // head
+
+      // legs — stride shortens as each leg lifts
+      c.fillStyle = '#3f2d23';
+      if (facing === 'up') {
+        c.fillRect(x - 6, y - 8, 4, 8);
+        c.fillRect(x + 2, y - 8, 4, 8);
+      } else {
+        c.fillRect(x - 6, y - 8 + Math.max(0, legSwing), 4, 8 - Math.max(0, legSwing));
+        c.fillRect(x + 2, y - 8 + Math.max(0, -legSwing), 4, 8 - Math.max(0, -legSwing));
+      }
+
+      const bodyY = y - 12 - bob;
+
+      // scarf tail — flutters behind, drawn under the body
+      c.fillStyle = '#f59e0b';
+      c.fillRect(
+        x - dirX * 8 - 2,
+        bodyY - 2 + Math.sin(phase * 1.4) * 1.4 * amp,
+        4,
+        7,
+      );
+
+      // cloak body (back shows when facing up)
+      if (facing === 'up') {
+        c.fillStyle = '#0c4a6e';
+        c.beginPath();
+        c.roundRect(x - 8, bodyY - 4, 16, 15, 5);
+        c.fill();
+      } else {
+        c.fillStyle = '#0ea5e9';
+        c.beginPath();
+        c.roundRect(x - 8, bodyY - 4, 16, 15, 5);
+        c.fill();
+        c.fillStyle = '#075985'; // belt
+        c.fillRect(x - 8, bodyY + 6, 16, 3);
+      }
+
+      // head + hair
+      const headY = bodyY - 10;
       c.fillStyle = '#fcd9b8';
       c.beginPath();
-      c.arc(player.x, player.y - 24, 6, 0, Math.PI * 2);
+      c.arc(x, headY, 6, 0, Math.PI * 2);
       c.fill();
-      // facing nose
-      c.fillStyle = '#0c4a6e';
+      c.fillStyle = '#4a2f1d';
       c.beginPath();
-      c.arc(player.x + player.fx * 8, player.y - 14 + player.fy * 6, 2.5, 0, Math.PI * 2);
+      c.arc(x, headY - 1.5, 6, Math.PI, 2 * Math.PI);
       c.fill();
+      c.fillRect(x - 6, headY - 2.5, 12, 2.5);
+
+      // face by direction
+      c.fillStyle = '#1e293b';
+      if (facing === 'down') {
+        c.fillRect(x - 3, headY + 0.5, 1.6, 2.2);
+        c.fillRect(x + 1.4, headY + 0.5, 1.6, 2.2);
+      } else if (dirX !== 0) {
+        c.fillRect(x + dirX * 2.2 - 0.8, headY + 0.5, 1.6, 2.2);
+        c.fillStyle = '#eab899'; // nose profile
+        c.fillRect(x + dirX * 5, headY + 1.5, 1.8, 1.6);
+      }
+
+      // scarf front band
+      c.fillStyle = '#f59e0b';
+      c.fillRect(x - 6, headY + 4.5, 12, 2.5);
+
+      // dust puff when starting to move
+      if (moving && amp < 0.5) {
+        c.fillStyle = 'rgba(120, 100, 70, 0.35)';
+        c.beginPath();
+        c.ellipse(x, y + 1, 7 * (1 - amp), 2.4 * (1 - amp), 0, 0, Math.PI * 2);
+        c.fill();
+      }
     };
 
     const drawPin = (c: CanvasRenderingContext2D, img: HTMLImageElement, p: Pin, t: number, i: number) => {
@@ -224,13 +291,13 @@ export default function VillageMap() {
       last = now;
       const t = now / 1000;
 
-      // --- movement ---
+      // --- movement (arrow keys only) ---
       let dx = 0;
       let dy = 0;
-      if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
-      if (keys.has('d') || keys.has('arrowright')) dx += 1;
-      if (keys.has('w') || keys.has('arrowup')) dy -= 1;
-      if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+      if (keys.has('arrowleft')) dx -= 1;
+      if (keys.has('arrowright')) dx += 1;
+      if (keys.has('arrowup')) dy -= 1;
+      if (keys.has('arrowdown')) dy += 1;
       if (dx === 0 && dy === 0 && moveTarget.active) {
         const vx = moveTarget.x - player.x;
         const vy = moveTarget.y - player.y;
@@ -242,18 +309,23 @@ export default function VillageMap() {
           dy = vy / d;
         }
       }
-      if (dx !== 0 || dy !== 0) {
+      player.moving = dx !== 0 || dy !== 0;
+      if (player.moving) {
         const len = Math.hypot(dx, dy);
         dx /= len;
         dy /= len;
-        player.fx = dx;
-        player.fy = dy;
+        // face dominant direction
+        if (Math.abs(dx) >= Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
+        else player.facing = dy > 0 ? 'down' : 'up';
+        player.phase += dt * 11;
         const step = SPEED * dt;
         const nx = player.x + dx * step;
         if (!hitsSolid(nx, player.y)) player.x = nx;
         const ny = player.y + dy * step;
         if (!hitsSolid(player.x, ny)) player.y = ny;
       }
+      // ease walk amplitude in/out so legs start and stop smoothly
+      player.amp += ((player.moving ? 1 : 0) - player.amp) * Math.min(1, dt * 12);
 
       // --- camera (follow + clamp, center if world smaller than view) ---
       const rect = canvas.getBoundingClientRect();
@@ -370,7 +442,7 @@ export default function VillageMap() {
         )}
       </div>
       <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-black/60 px-4 py-1.5 text-xs text-white/70">
-        WASD / arrows to move · drag to walk · scroll to zoom
+        arrow keys to move · click ground to walk · scroll to zoom
       </div>
     </div>
   );
