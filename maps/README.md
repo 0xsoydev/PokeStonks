@@ -8,10 +8,20 @@ Preview: `pnpm dev` → http://localhost:3000/maps
 
 - Arrow keys — walk (grid-step, GBA style)
 - Shift (hold) — run
-- Z / Enter / Space — read signs & mailboxes, catch poké balls
+- Step onto a poké ball — FireRed-style battle popup: FIGHT or LEAVE
+- Z / Enter — confirm · arrows — menu cursor · Esc/X — back / leave
 - P — switch your pokémon (Pikachu → Charmander → Bulbasaur → Squirtle → Eevee)
 - Click ground — click-to-move
 - C — collision debug overlay
+
+## Battles
+
+Step onto a poké ball → "A wild SNORLAX appeared! It guards the AAPL stock" —
+choose FIGHT (2 moves per mon) or LEAVE. Turns alternate; HP bars + numbers
+drain (green→yellow→red); hit flashes + screen shake. Opponent faints →
+victory popup with the token (+drop/catch), ball despawns, respawns in 30s.
+Player faints → ball stays. Static logic only (fixed 45–85 dmg, no types/crits).
+Opponent roster: AAPL→Snorlax · TSLA→Electrode · NVDA→Alakazam · GME→Gengar · AMZN→Venusaur.
 
 ## How it works
 

@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { parseGIF, decompressFrames } from 'gifuct-js';
 import pinsData from '@/maps/data/pins.json';
+import Battle from './Battle';
 
 // --- engine constants (mirrors demo.html) ---
 const TS = 16;
@@ -82,6 +83,11 @@ export default function VillageMap() {
   const [mapName, setMapName] = useState('');
   const [banner, setBanner] = useState(false);
   const [monName, setMonName] = useState('');
+  const [monId, setMonId] = useState(25);
+  const [encounter, setEncounter] = useState<Pin | null>(null);
+  const battleRef = useRef(false);
+  const encounterRef = useRef<Pin | null>(null);
+  const engineApi = useRef<{ done: (r: 'win' | 'lose' | 'flee') => void } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -229,6 +235,7 @@ export default function VillageMap() {
       if (cancelled) return;
       mon = { id, name, front, back };
       setMonName(name);
+      setMonId(id);
     };
     const cycleMon = () => {
       monIx = (monIx + 1) % STARTERS.length;
@@ -262,11 +269,13 @@ export default function VillageMap() {
     const pinAt = (x: number, y: number) =>
       PINS.find((p) => p.x === x && p.y === y && !caught.has(p.symbol));
 
-    const catchPin = (pin: Pin) => {
-      caught.add(pin.symbol);
-      respawnAt.set(pin.symbol, clock + RESPAWN_S);
-      setCaughtList((c) => [...c, pin.symbol]);
-      say(`You caught ${pin.symbol}!\n+${pin.drop}/catch — battle hook coming soon.`);
+    // walking onto (or facing + Z) a poké ball opens the battle instead of an instant catch
+    const startEncounter = (pin: Pin) => {
+      held.length = 0;
+      moveTarget.x = -1;
+      encounterRef.current = pin;
+      battleRef.current = true;
+      setEncounter(pin);
     };
 
     const interact = () => {
@@ -283,7 +292,7 @@ export default function VillageMap() {
         return;
       }
       const pin = pinAt(fx, fy);
-      if (pin) catchPin(pin);
+      if (pin) startEncounter(pin);
     };
 
     const arrive = () => {
@@ -293,8 +302,22 @@ export default function VillageMap() {
         return;
       }
       const pin = pinAt(pl.tx, pl.ty);
-      if (pin) catchPin(pin);
+      if (pin) startEncounter(pin);
     };
+
+    // called by the Battle overlay when it closes
+    const battleDone = (result: 'win' | 'lose' | 'flee') => {
+      battleRef.current = false;
+      const pin = encounterRef.current;
+      encounterRef.current = null;
+      if (result === 'win' && pin) {
+        caught.add(pin.symbol);
+        respawnAt.set(pin.symbol, clock + RESPAWN_S);
+        setCaughtList((c) => [...c, pin.symbol]);
+      }
+      setEncounter(null);
+    };
+    engineApi.current = { done: battleDone };
 
     const step = (d: 0 | 1 | 2 | 3) => {
       pl.dir = d;
@@ -347,6 +370,7 @@ export default function VillageMap() {
       ArrowUp: 3,
     };
     const onKeyDown = (e: KeyboardEvent) => {
+      if (battleRef.current) return; // battle overlay owns the keys
       const d = KEYMAP[e.key];
       if (d !== undefined) {
         e.preventDefault();
@@ -362,6 +386,7 @@ export default function VillageMap() {
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (battleRef.current) return;
       const d = KEYMAP[e.key];
       if (d !== undefined) {
         const i = held.indexOf(d);
@@ -369,6 +394,7 @@ export default function VillageMap() {
       } else if (e.key === 'Shift') running = false;
     };
     const onPointerDown = (e: PointerEvent) => {
+      if (battleRef.current) return;
       if (dialog) {
         dialog = null;
         return;
@@ -684,6 +710,15 @@ export default function VillageMap() {
         <div className="pointer-events-none absolute top-8 rounded-lg border-2 border-white/60 bg-black/80 px-6 py-2 text-lg font-bold tracking-wide text-white shadow-lg">
           {mapName}
         </div>
+      )}
+      {encounter && (
+        <Battle
+          symbol={encounter.symbol}
+          drop={encounter.drop}
+          playerName={monName || 'Pikachu'}
+          playerId={monId}
+          onDone={(r) => engineApi.current?.done(r)}
+        />
       )}
       {/* HUD */}
       <div className="pointer-events-none absolute left-4 top-4 space-y-2 text-sm text-white">
