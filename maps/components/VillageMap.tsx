@@ -5,14 +5,15 @@
 // render with the player sandwiched between objects and overhead layer).
 // Stock pins are poké balls; walk into one (or face it + Enter) to catch.
 import { useEffect, useRef, useState } from 'react';
+import { parseGIF, decompressFrames } from 'gifuct-js';
 import pinsData from '@/maps/data/pins.json';
 
 // --- engine constants (mirrors demo.html) ---
 const TS = 16;
 const VW = 15;
 const VH = 10; // GBA 240x160 viewport
-const WALK_MS = 170;
-const RUN_MS = 90;
+const WALK_MS = 210;
+const RUN_MS = 120;
 const RESPAWN_S = 30;
 const DX = [0, -1, 1, 0] as const; // down, left, right, up
 const DY = [1, 0, 0, -1] as const;
@@ -153,7 +154,18 @@ export default function VillageMap() {
     let last = performance.now();
 
     // --- pokemon sprites (loaded async, trainer sheet is the fallback) ---
-    let mon: { id: number; name: string; front: HTMLImageElement | null; back: HTMLImageElement | null } | null = null;
+    // Chromium only paints the FIRST frame of an animated GIF via drawImage,
+    // so gen-V gifs are decoded client-side (gifuct-js) and frame-cycled manually.
+    interface MonFrame {
+      canvas: HTMLCanvasElement;
+      delay: number;
+    }
+    interface MonAnim {
+      frames: MonFrame[];
+      w: number;
+      h: number;
+    }
+    let mon: { id: number; name: string; front: MonAnim | null; back: MonAnim | null } | null = null;
     let monIx = 0;
     const tryImage = (url: string) =>
       new Promise<HTMLImageElement | null>((res) => {
@@ -162,14 +174,58 @@ export default function VillageMap() {
         img.onerror = () => res(null);
         img.src = url;
       });
+    const staticAnim = (img: HTMLImageElement): MonAnim => {
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      c.getContext('2d')?.drawImage(img, 0, 0);
+      return { frames: [{ canvas: c, delay: 100 }], w: img.width, h: img.height };
+    };
+    const loadGifAnim = async (url: string): Promise<MonAnim | null> => {
+      try {
+        const buf = await fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null));
+        if (!buf) return null;
+        const gif = parseGIF(buf);
+        const parsed = decompressFrames(gif, true);
+        if (!parsed.length) return null;
+        const w = gif.lsd.width;
+        const h = gif.lsd.height;
+        const full = document.createElement('canvas');
+        full.width = w;
+        full.height = h;
+        const fctx = full.getContext('2d');
+        if (!fctx) return null;
+        const frames: MonFrame[] = [];
+        for (const f of parsed) {
+          const before = fctx.getImageData(0, 0, w, h); // for disposal #3 (restore prev)
+          const patch = fctx.createImageData(f.dims.width, f.dims.height);
+          patch.data.set(f.patch);
+          fctx.putImageData(patch, f.dims.left, f.dims.top);
+          // snapshot the composed frame
+          const snap = document.createElement('canvas');
+          snap.width = w;
+          snap.height = h;
+          snap.getContext('2d')?.drawImage(full, 0, 0);
+          frames.push({ canvas: snap, delay: Math.max(f.delay, 20) });
+          // apply disposal for the next frame
+          if (f.disposalType === 2) fctx.clearRect(f.dims.left, f.dims.top, f.dims.width, f.dims.height);
+          else if (f.disposalType === 3) fctx.putImageData(before, 0, 0);
+        }
+        return { frames, w, h };
+      } catch {
+        return null;
+      }
+    };
     const loadMon = async (id: number, name: string) => {
       // animated gen-V gifs first, gen-III/static as fallback per direction
       const front =
-        (await tryImage(`${SPRITES_CDN}/versions/generation-v/black-white/animated/${id}.gif`)) ??
-        (await tryImage(`${SPRITES_CDN}/versions/generation-iii/emerald/${id}.png`));
+        (await loadGifAnim(`${SPRITES_CDN}/versions/generation-v/black-white/animated/${id}.gif`)) ??
+        (await tryImage(`${SPRITES_CDN}/versions/generation-iii/emerald/${id}.png`).then((i) =>
+          i ? staticAnim(i) : null,
+        ));
       const back =
-        (await tryImage(`${SPRITES_CDN}/versions/generation-v/black-white/animated/back/${id}.gif`)) ??
-        (await tryImage(`${SPRITES_CDN}/back/${id}.png`));
+        (await loadGifAnim(`${SPRITES_CDN}/versions/generation-v/black-white/animated/back/${id}.gif`)) ??
+        (await tryImage(`${SPRITES_CDN}/back/${id}.png`).then((i) => (i ? staticAnim(i) : null)));
       if (cancelled) return;
       mon = { id, name, front, back };
       setMonName(name);
@@ -492,15 +548,23 @@ export default function VillageMap() {
     const drawPlayer = (px: number, py: number, plImg: HTMLImageElement) => {
       const feetSx = Math.round((px + TS / 2 - cam.x) * S); // feet-center, screen px
       const feetSy = Math.round((py + TS - 2 - cam.y) * S);
-      const monImg =
-        mon ? (pl.dir === 3 ? (mon.back ?? mon.front) : mon.front) : null;
-      if (monImg) {
+      const anim = mon ? (pl.dir === 3 ? (mon.back ?? mon.front) : mon.front) : null;
+      if (anim) {
+        // frame-cycle by per-frame delay (clock is in seconds)
+        const total = anim.frames.reduce((s, f) => s + f.delay, 0);
+        let m = (clock * 1000) % total;
+        let fr = anim.frames[0];
+        for (const f of anim.frames) {
+          if (m < f.delay) {
+            fr = f;
+            break;
+          }
+          m -= f.delay;
+        }
         // fit sprite into ~1.6 tiles, anchored feet-center
-        const maxW = 26;
-        const maxH = 26;
-        const scale = Math.min(maxW / monImg.width, maxH / monImg.height);
-        const w = Math.round(monImg.width * scale * S);
-        const h = Math.round(monImg.height * scale * S);
+        const scale = Math.min(26 / anim.w, 26 / anim.h);
+        const w = Math.round(anim.w * scale * S);
+        const h = Math.round(anim.h * scale * S);
         const dx = Math.round(feetSx - w / 2);
         const dy = Math.round(feetSy - h);
         // shadow
@@ -513,9 +577,9 @@ export default function VillageMap() {
           // left = mirrored front sprite
           ctx.translate(dx + w, dy);
           ctx.scale(-1, 1);
-          ctx.drawImage(monImg, 0, 0, w, h);
+          ctx.drawImage(fr.canvas, 0, 0, w, h);
         } else {
-          ctx.drawImage(monImg, dx, dy, w, h);
+          ctx.drawImage(fr.canvas, dx, dy, w, h);
         }
         ctx.restore();
         return;
