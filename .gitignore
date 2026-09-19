@@ -34,3 +34,6 @@ contracts/broadcast/
 
 # Colyseus
 apps/server/data/
+
+# TS incremental
+*.tsbuildinfo

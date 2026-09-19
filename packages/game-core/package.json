@@ -5,6 +5,10 @@
   "main": "index.ts",
   "types": "index.ts",
   "scripts": {
-    "test": "node --test *.test.ts 2>/dev/null || echo 'no tests yet'"
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.1"
   }
 }
