@@ -9,6 +9,7 @@ import Title from './Title';
 import BrokerSelect from './BrokerSelect';
 import Hud from './Hud';
 import ClaimLayer from './ClaimLayer';
+import ConnectWalletDialog from './ConnectWalletDialog';
 
 // MapLibre + three (pixel field) only ever run in the browser.
 const Globe = dynamic(() => import('./Globe'), { ssr: false });
@@ -66,7 +67,7 @@ export default function App() {
     [],
   );
 
-  // Lost the session (signed out in another tab, Privy expiry): back to the start, never a dead screen.
+  // Lost the session (signed out in another tab, wallet disconnected): back to the start, never a dead screen.
   useEffect(() => {
     if (status === 'signed-out' && stage !== 'title') {
       exitRoute();
@@ -129,6 +130,7 @@ export default function App() {
       )}
 
       <ClaimLayer />
+      <ConnectWalletDialog />
     </main>
   );
 }

@@ -45,7 +45,7 @@ export class EndOverlay {
 
     let bx = W / 2 - 110;
     if (won && end.claimable) {
-      this.claimBtn = this.button('CLAIM REWARD', W / 2 - 235, 430, 250, C.green, C.greenDark, () => { this.setClaim({ state: 'signing' }); o.onClaim(); });
+      this.claimBtn = this.button('CLAIM REWARD', W / 2 - 235, 430, 250, C.green, C.greenDark, () => o.onClaim());
       bx = W / 2 + 20;
     }
     this.button('CONTINUE', bx, 430, 210, C.gray, C.grayDark, () => o.onContinue(), true);
@@ -77,7 +77,8 @@ export class EndOverlay {
     const lock = (msg: string, color: string) => { this.status.setText(msg).setColor(color); };
     if (btn) { btn.z.disableInteractive(); btn.t.setAlpha(0.5); }
     switch (s.state) {
-      case 'signing': lock('Signing your reward voucher...', '#f8d858'); break;
+      case 'signing': lock('Getting your reward voucher...', '#f8d858'); break;
+      case 'wallet': lock('Confirm the claim in your wallet.\nYou pay a small MON network fee.', '#f8d858'); break;
       case 'submitted': lock('Settling on Monad...', '#f8d858'); break;
       case 'confirmed': {
         const amt = formatToken(s.minted);
@@ -93,6 +94,7 @@ export class EndOverlay {
         audio.sfx('error');
         break;
       case 'ineligible': lock(s.error ?? 'This match does not pay rewards.', '#f8a858'); break;
+      default: break;
     }
   }
 

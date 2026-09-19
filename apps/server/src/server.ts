@@ -2,7 +2,7 @@ import { Server, matchMaker } from 'colyseus';
 import { ROOM_NAME } from 'game-core';
 import { config } from './config.ts';
 import { BattleRoom } from './rooms/BattleRoom.ts';
-import { claims } from './services.ts';
+import { vouchers } from './services.ts';
 
 export function createGameServer(): Server {
   const startedAt = Date.now();
@@ -21,7 +21,7 @@ export function createGameServer(): Server {
       app.get('/health', async (_req, res) => {
         let rooms = 0;
         try { rooms = (await matchMaker.query({ name: ROOM_NAME })).length; } catch { /* stats are best-effort */ }
-        res.json({ ok: true, uptimeS: Math.floor((Date.now() - startedAt) / 1000), rooms, rewards: claims.enabled });
+        res.json({ ok: true, uptimeS: Math.floor((Date.now() - startedAt) / 1000), rooms, rewards: vouchers.enabled });
       });
     },
   });

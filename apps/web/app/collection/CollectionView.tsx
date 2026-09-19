@@ -40,7 +40,7 @@ function useRecord(address: `0x${string}` | undefined): OnchainRecord | null | u
 }
 
 export default function CollectionView() {
-  const { status, address, displayName, mode, privyEnabled, login, playAsGuest } = useIdentity();
+  const { status, address, displayName, mode, login, playAsGuest } = useIdentity();
   const wallet = useWalletData(address);
   const record = useRecord(address);
   const deployed = contractsConfigured();
@@ -64,8 +64,8 @@ export default function CollectionView() {
               Your tokens and BrokerMon live in your wallet. Sign in with the same account you battled with.
             </p>
             <div className="mt-3 flex flex-wrap">
-              {privyEnabled && <Button onClick={login}>Sign in with Google</Button>}
-              <Button variant={privyEnabled ? 'quiet' : 'primary'} onClick={playAsGuest}>
+              <Button onClick={login}>Connect wallet</Button>
+              <Button variant="quiet" onClick={playAsGuest}>
                 Play as guest
               </Button>
             </div>
@@ -75,7 +75,7 @@ export default function CollectionView() {
         {status === 'signed-in' && address && (
           <div className="mt-2">
             <Panel tone="plate" className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2!">
-              <span className="chip chip-plain">{mode === 'guest' ? 'Guest wallet' : 'Google wallet'}</span>
+              <span className="chip chip-plain">{mode === 'guest' ? 'Guest wallet' : 'Connected wallet'}</span>
               <span className="text-[16px]">
                 {displayName} <span className="tabular-nums text-slate">{shortAddress(address, 6, 4)}</span>
               </span>

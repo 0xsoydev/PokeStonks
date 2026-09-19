@@ -18,7 +18,7 @@ interface Props {
  * with the menu, like a handheld's title menu: the blinking triangle marks the current choice.
  */
 export default function Title({ ready, onContinue }: Props) {
-  const { status, mode, address, displayName, privyEnabled, login, playAsGuest, logout } = useIdentity();
+  const { status, mode, address, displayName, login, playAsGuest, logout } = useIdentity();
   const menuRef = useRef<HTMLDivElement>(null);
   /** Set when the player starts a sign-in here, so finishing it carries them straight on. */
   const awaiting = useRef(false);
@@ -48,7 +48,7 @@ export default function Title({ ready, onContinue }: Props) {
     e.preventDefault();
   }, []);
 
-  const startGoogle = () => {
+  const startWallet = () => {
     audio.sfx('menu_select');
     awaiting.current = true;
     login();
@@ -64,7 +64,7 @@ export default function Title({ ready, onContinue }: Props) {
   };
 
   const signedIn = status === 'signed-in';
-  const walletLabel = mode === 'guest' ? 'Guest wallet on this device' : 'Google account wallet';
+  const walletLabel = mode === 'guest' ? 'Guest wallet on this device' : 'Your connected wallet';
 
   return (
     <section
@@ -107,18 +107,16 @@ export default function Title({ ready, onContinue }: Props) {
             </>
           ) : (
             <>
-              {privyEnabled && (
-                <button type="button" className="menu-item" onClick={startGoogle} disabled={status === 'loading'}>
-                  <span>
-                    Sign in with Google
-                    <small>{status === 'loading' ? 'Checking your session…' : 'Creates a wallet for you. No extension needed.'}</small>
-                  </span>
-                </button>
-              )}
+              <button type="button" className="menu-item" onClick={startWallet} disabled={status === 'loading'}>
+                <span>
+                  Connect wallet
+                  <small>{status === 'loading' ? 'Checking your wallet…' : 'MetaMask or any browser wallet with MON. Needed to claim rewards.'}</small>
+                </span>
+              </button>
               <button type="button" className="menu-item" onClick={startGuest}>
                 <span>
                   Play as guest
-                  <small>Instant. Uses a throwaway wallet saved in this browser.</small>
+                  <small>Instant. Plays the full game; connect a wallet when you want to claim.</small>
                 </span>
               </button>
             </>

@@ -9,7 +9,7 @@ import { BattleEngine, other, type Choice, type EndReason } from '../engine/batt
 import { chooseBotMove } from '../engine/bot.ts';
 import { cryptoRng } from '../engine/rng.ts';
 import { config } from '../config.ts';
-import { prices, claims } from '../services.ts';
+import { prices, vouchers } from '../services.ts';
 
 const JoinOptions = z.object({
   wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'wallet must be an 0x address'),
@@ -25,6 +25,7 @@ const LockMove = z.object({
   moveId: z.string().min(1).max(32),
   tap: z.enum(['perfect', 'good', 'miss']),
 });
+const RequestClaim = z.object({ to: z.string().regex(/^0x[0-9a-fA-F]{40}$/) });
 const TurnAck = z.object({ turnNo: z.number().int().min(0).max(10_000) });
 
 const ALL: SeatKey[] = ['A', 'B'];
@@ -80,8 +81,6 @@ export class BattleRoom extends Room<{ state: BattleState }> {
   private started = false;
   private finished = false;
   private resolvingTurn = -1;
-  private claimRequested = false;
-  private lastClaim?: ClaimStatus;
   private endInfo?: BattleEnd;
 
   private botTimer?: Delayed;
@@ -110,7 +109,7 @@ export class BattleRoom extends Room<{ state: BattleState }> {
     this.onMessage(MSG.lockMove, (client, raw) => this.onLockMove(client, raw));
     this.onMessage(MSG.turnAck, (client, raw) => this.onTurnAck(client, raw));
     this.onMessage(MSG.flee, (client) => this.onFlee(client));
-    this.onMessage(MSG.requestClaim, (client) => this.onRequestClaim(client));
+    this.onMessage(MSG.requestClaim, (client, raw) => this.onRequestClaim(client, raw));
   }
 
   async onAuth(_client: Client, options: unknown): Promise<Join> {
@@ -177,7 +176,6 @@ export class BattleRoom extends Room<{ state: BattleState }> {
     client.send(MSG.seat, { key, roomId: this.roomId });
     // Re-send anything the client may have missed; state itself is snapshotted automatically.
     if (this.endInfo) client.send(MSG.battleEnd, this.endInfo);
-    if (this.lastClaim) client.send(MSG.claimStatus, this.lastClaim);
   }
 
   onLeave(client: Client, code?: number) {
@@ -445,7 +443,7 @@ export class BattleRoom extends Room<{ state: BattleState }> {
     const loser = other(winner);
     const winP = this.state.players.get(winner)!;
     const loseSp = getSpecies(engine.seats[loser].mon.speciesId);
-    const claimable = !winP.isBot && this.state.mode !== 'practice' && Boolean(winP.wallet) && claims.enabled;
+    const claimable = !winP.isBot && this.state.mode !== 'practice' && vouchers.enabled;
 
     this.state.winner = winner;
     this.state.phase = 'END';
@@ -457,30 +455,34 @@ export class BattleRoom extends Room<{ state: BattleState }> {
     this.endTimer = this.clock.setTimeout(() => this.disconnect(), CLAIM_LINGER_MS);
   }
 
-  private onRequestClaim(client: Client) {
+  private onRequestClaim(client: Client, raw: unknown) {
     const key = this.seatOf(client);
-    const send = (s: ClaimStatus) => { this.lastClaim = s; try { client.send(MSG.claimStatus, s); } catch { /* client gone; tx continues */ } };
+    const deny = (error: string) => { const st: ClaimStatus = { state: 'ineligible', error }; client.send(MSG.claimStatus, st); };
     if (!key || !this.engine || !this.finished || !this.endInfo) return this.reject(client, 'The battle is not over.');
-    if (key !== this.endInfo.winner) return send({ state: 'ineligible', error: 'Only the winner can claim the prize.' });
-    if (!this.endInfo.claimable) return send({ state: 'ineligible', error: claims.enabled ? 'This match does not pay rewards.' : 'Rewards are not live on this server yet.' });
-    if (this.claimRequested) { if (this.lastClaim) client.send(MSG.claimStatus, this.lastClaim); return; }
-    this.claimRequested = true;
+    if (key !== this.endInfo.winner) return deny('Only the winner can claim the prize.');
+    if (!this.endInfo.claimable) return deny(vouchers.enabled ? 'This match does not pay rewards.' : 'Rewards are not live on this server yet.');
+    const parsed = RequestClaim.safeParse(raw);
+    if (!parsed.success) return deny('Connect a wallet to receive your reward.');
 
     const loser = other(key);
-    const winP = this.state.players.get(key)!;
     const losP = this.state.players.get(loser)!;
     const loseSp = getSpecies(this.engine.seats[loser].mon.speciesId);
     const humanFoe = !losP.isBot;
-    void claims.claim({
+    void vouchers.issue({
       roomId: this.roomId,
       roomStamp: this.stamp,
-      winner: winP.wallet as `0x${string}`,
-      loser: humanFoe ? (losP.wallet as `0x${string}`) : undefined,
+      to: parsed.data.to,
+      loser: humanFoe && /^0x[0-9a-fA-F]{40}$/.test(losP.wallet) ? (losP.wallet as `0x${string}`) : undefined,
       ticker: loseSp.ticker,
       prizeSpeciesId: loseSp.id,
       humanFoe,
       captureSpeciesNum: loseSp.num,
       level: this.engine.seats[key].mon.level,
-    }, send);
+    }).then((r) => {
+      try {
+        if (r.ok) client.send(MSG.claimVoucher, r.voucher);
+        else deny(r.error);
+      } catch { /* client left; the voucher is re-issued if they come back */ }
+    });
   }
 }

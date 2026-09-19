@@ -30,7 +30,7 @@ function useMuted(): boolean {
  * controls take them, so it never blocks the game's input area.
  */
 export default function Hud() {
-  const { address, displayName, mode, logout } = useIdentity();
+  const { address, displayName, mode, login, logout } = useIdentity();
   const playing = useSessionStore((s) => s.marketId !== null);
   const setStage = useSessionStore((s) => s.setStage);
   const wallet = useWalletData(address);
@@ -72,8 +72,8 @@ export default function Hud() {
     >
       <Panel tone="plate" className="pointer-events-auto p-2!">
         <div className="flex items-center gap-1">
-          <span className="chip chip-plain" title={mode === 'guest' ? 'Throwaway testnet wallet saved in this browser' : 'Wallet created for your Google account'}>
-            {mode === 'guest' ? 'Guest' : 'Google'}
+          <span className="chip chip-plain" title={mode === 'guest' ? 'Throwaway testnet wallet saved in this browser' : 'Your connected browser wallet'}>
+            {mode === 'guest' ? 'Guest' : 'Wallet'}
           </span>
           <span className="px-1 text-[15px] tabular-nums" title={displayName}>
             {shortAddress(address)}
@@ -91,6 +91,12 @@ export default function Hud() {
             <Icon name="external" size={14} />
           </a>
         </div>
+
+        {mode === 'guest' && (
+          <Button small className="mt-1 w-full" onClick={() => { audio.sfx('menu_select'); login(); }}>
+            Connect wallet to claim
+          </Button>
+        )}
 
         {!playing && (
           <>

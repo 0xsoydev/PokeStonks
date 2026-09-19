@@ -21,7 +21,6 @@ const Env = z.object({
   PYTH_ADDRESS: addr.default('0x2880aB155794e7179c9eE2e38200202908C17B43'),
   ARENA_ADDRESS: opt(addr),
   CLAIM_SIGNER_PRIVATE_KEY: opt(hex32),
-  RELAYER_PRIVATE_KEY: opt(hex32),
   /** Test/ops override for the queue → bot timeout. */
   QUEUE_BOT_MS: opt(z.coerce.number().int().min(0)),
   REWARD_HUMAN_WEI: z.string().regex(/^\d+$/).default('100000000000000000'), // 0.10 sSTOCK
@@ -65,7 +64,6 @@ export const config = {
   pythAddress: env.PYTH_ADDRESS as `0x${string}`,
   arenaAddress: deployedArena(),
   signerKey: norm(env.CLAIM_SIGNER_PRIVATE_KEY),
-  relayerKey: norm(env.RELAYER_PRIVATE_KEY) ?? norm(env.CLAIM_SIGNER_PRIVATE_KEY),
   queueBotMs: env.QUEUE_BOT_MS,
   rewardHumanWei: BigInt(env.REWARD_HUMAN_WEI),
   rewardBotWei: BigInt(env.REWARD_BOT_WEI),

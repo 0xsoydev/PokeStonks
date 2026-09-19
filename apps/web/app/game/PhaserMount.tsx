@@ -19,7 +19,13 @@ export default function PhaserMount({ marketId, speciesId, wallet, onExit }: Pha
   const host = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const exitRef = useRef(onExit);
+  const walletRef = useRef(wallet);
   useEffect(() => { exitRef.current = onExit; });
+  // Connecting a wallet mid-route must not restart the game: update the registry in place.
+  useEffect(() => {
+    walletRef.current = wallet;
+    gameRef.current?.registry.set('wallet', wallet);
+  }, [wallet]);
   const [rotateHint, setRotateHint] = useState(false);
 
   // The game is 3:2 landscape; on a portrait phone it letterboxes to a small strip, so suggest rotating.
@@ -67,7 +73,7 @@ export default function PhaserMount({ marketId, speciesId, wallet, onExit }: Pha
           preBoot: (g) => {
             g.registry.set('marketId', marketId);
             g.registry.set('speciesId', speciesId);
-            g.registry.set('wallet', wallet);
+            g.registry.set('wallet', walletRef.current);
             g.registry.set('onExit', () => exitRef.current());
           },
         },
@@ -82,7 +88,7 @@ export default function PhaserMount({ marketId, speciesId, wallet, onExit }: Pha
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
-  }, [marketId, speciesId, wallet]);
+  }, [marketId, speciesId]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: '#0b1030', touchAction: 'none' }}>

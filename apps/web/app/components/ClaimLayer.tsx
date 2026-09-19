@@ -18,11 +18,11 @@ interface View {
   open: boolean;
 }
 
-const IN_PROGRESS = new Set<ClaimStatus['state']>(['signing', 'submitted']);
+const IN_PROGRESS = new Set<ClaimStatus['state']>(['signing', 'wallet', 'submitted']);
 
 /**
- * Turns the server-relayed claim (EventBus 'claim:status') into UI: a live "settling" card while the
- * relayer works, then a result dialog. Players never sign or pay; the copy says so where it matters.
+ * Turns claim progress (EventBus 'claim:status') into UI: a live card while the player's wallet signs
+ * and the chain settles, then a result dialog. The player's wallet submits the claim and pays the fee.
  */
 export default function ClaimLayer() {
   const [view, setView] = useState<View | null>(null);
@@ -72,12 +72,14 @@ function ProgressCard({ status }: { status: ClaimStatus }) {
       <Panel tone="dialog" role="status" className="pointer-events-auto w-[min(100%_-_1rem,22rem)] animate-[toast-in_240ms_steps(3,end)_both] py-3!">
         <p className="flex items-center gap-3">
           <Spinner className="text-yellow" />
-          <span className="font-pixel t-10 leading-snug">Settling on Monad</span>
+          <span className="font-pixel t-10 leading-snug">{status.state === 'wallet' ? 'Check your wallet' : 'Settling on Monad'}</span>
         </p>
         <p className="mt-2 text-[15px] leading-snug">
           {status.state === 'signing'
-            ? 'Getting your reward approved. This is free: the game server pays the fee.'
-            : 'Your reward was sent to the chain. Waiting for confirmation, usually a second or two.'}
+            ? 'Getting your reward voucher signed by the battle server.'
+            : status.state === 'wallet'
+              ? 'Approve the claim in your wallet. It costs a small network fee in MON; the tokens go to this wallet.'
+              : 'Your claim was sent to the chain. Waiting for confirmation, usually a second or two.'}
         </p>
         {status.txHash && (
           <p className="mt-1 text-[14px]">
@@ -204,12 +206,12 @@ function Problem({ status, titleId }: { status: ClaimStatus; titleId: string }) 
       </h2>
       <p className="mt-2 text-[16px] leading-snug">
         {ineligible
-          ? 'Rewards are paid for real battles that you win with a wallet connected. Practice battles do not pay out.'
-          : 'The reward transaction did not go through. You were not charged anything: the game server pays the network fee.'}
+          ? 'Rewards are paid for live battles that you win. Practice battles do not pay out.'
+          : 'The claim did not go through. If your wallet sent a transaction that reverted, only its network fee was spent.'}
       </p>
       {detail && (
         <div className="panel panel-well panel-flat mt-2">
-          <p className="text-[14px] leading-snug break-words text-slate">Server said: {detail}</p>
+          <p className="text-[14px] leading-snug break-words text-slate">{detail}</p>
         </div>
       )}
       <p className="mt-2 text-[16px] leading-snug">

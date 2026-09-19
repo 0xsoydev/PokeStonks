@@ -2,7 +2,7 @@ import { Client, type Room } from '@colyseus/sdk';
 import {
   MSG, PROTOCOL_VERSION, ROOM_NAME,
   type SeatKey, type StatKey, type TapCategory, type TurnResolved, type BattleEnd, type ClaimStatus,
-  type BattleJoinOptions,
+  type BattleJoinOptions, type ClaimVoucher,
 } from 'game-core';
 
 export type ConnState = 'online' | 'reconnecting' | 'closed';
@@ -76,12 +76,13 @@ export class BattleSession {
   conn: ConnState = 'online';
   battleEnd: BattleEnd | null = null;
   lastClaim: ClaimStatus | null = null;
+  voucher: ClaimVoucher | null = null;
   mood = { A: 1, B: 1, pctA: 0, pctB: 0 };
   private turns: TurnResolved[] = [];
   private seenTurns = new Set<number>();
   private cache: Snapshot | null = null;
   private dirty = true;
-  private listeners = { turn: new Set<Listener<void>>(), end: new Set<Listener<BattleEnd>>(), claim: new Set<Listener<ClaimStatus>>(), conn: new Set<Listener<ConnState>>(), rejected: new Set<Listener<string>>() };
+  private listeners = { turn: new Set<Listener<void>>(), end: new Set<Listener<BattleEnd>>(), claim: new Set<Listener<ClaimStatus>>(), voucher: new Set<Listener<ClaimVoucher>>(), conn: new Set<Listener<ConnState>>(), rejected: new Set<Listener<string>>() };
   private closed = false;
 
   private constructor(readonly client: Client, readonly room: BattleRoomHandle) {
@@ -94,6 +95,7 @@ export class BattleSession {
     });
     room.onMessage(MSG.battleEnd, (m: BattleEnd) => { this.battleEnd = m; this.listeners.end.forEach((f) => f(m)); });
     room.onMessage(MSG.claimStatus, (m: ClaimStatus) => { this.lastClaim = m; this.listeners.claim.forEach((f) => f(m)); });
+    room.onMessage(MSG.claimVoucher, (m: ClaimVoucher) => { this.voucher = m; this.listeners.voucher.forEach((f) => f(m)); });
     room.onMessage(MSG.mood, (m: BattleSession['mood']) => { this.mood = m; });
     room.onMessage(MSG.rejected, (m: { reason: string }) => this.listeners.rejected.forEach((f) => f(m.reason)));
     room.onMessage(MSG.seat, () => { /* state is the source of truth */ });
@@ -200,6 +202,7 @@ export class BattleSession {
   onTurn(f: Listener<void>) { this.listeners.turn.add(f); return () => this.listeners.turn.delete(f); }
   onEnd(f: Listener<BattleEnd>) { this.listeners.end.add(f); return () => this.listeners.end.delete(f); }
   onClaim(f: Listener<ClaimStatus>) { this.listeners.claim.add(f); return () => this.listeners.claim.delete(f); }
+  onVoucher(f: Listener<ClaimVoucher>) { this.listeners.voucher.add(f); return () => this.listeners.voucher.delete(f); }
   onConn(f: Listener<ConnState>) { this.listeners.conn.add(f); return () => this.listeners.conn.delete(f); }
   onRejected(f: Listener<string>) { this.listeners.rejected.add(f); return () => this.listeners.rejected.delete(f); }
 
@@ -218,7 +221,19 @@ export class BattleSession {
   lock(turnNo: number, moveId: string, tap: TapCategory) { this.send(MSG.lockMove, { turnNo, moveId, tap }); }
   ack(turnNo: number) { this.send(MSG.turnAck, { turnNo }); }
   flee() { this.send(MSG.flee, {}); }
-  requestClaim() { this.send(MSG.requestClaim, {}); }
+  requestClaim(to: string) { this.send(MSG.requestClaim, { to }); }
+
+  /** Ask the server for a signed reward voucher paid to `to`. Resolves with the voucher or a refusal. */
+  voucherFor(to: string, timeoutMs = 20_000): Promise<{ voucher: ClaimVoucher } | { error: string }> {
+    if (this.voucher && this.voucher.claim.winner.toLowerCase() === to.toLowerCase()) return Promise.resolve({ voucher: this.voucher });
+    return new Promise((resolve) => {
+      const done = (r: { voucher: ClaimVoucher } | { error: string }) => { offV(); offC(); clearTimeout(t); resolve(r); };
+      const offV = this.onVoucher((v) => done({ voucher: v }));
+      const offC = this.onClaim((c) => { if (c.state === 'ineligible' || c.state === 'failed') done({ error: c.error ?? 'This battle does not pay a reward.' }); });
+      const t = setTimeout(() => done({ error: 'The battle server did not answer. Check your connection and press Claim again.' }), timeoutMs);
+      this.requestClaim(to);
+    });
+  }
 
   private send(type: string, payload: unknown) {
     if (this.closed) return;

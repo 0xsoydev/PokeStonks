@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
-import { getMarket, getMove, getSpecies, type SeatKey, type TapCategory } from 'game-core';
+import { getMarket, getMove, getSpecies, type ClaimStatus, type SeatKey, type TapCategory } from 'game-core';
 import { BattleSession, type PlayerView, type Snapshot } from '../net/session';
 import { EventBus } from '../net/events';
+import { claimWithWallet } from '../../web3/claimTx';
 import { audio } from '../audio';
 import { CommandMenu, MoveMenu } from '../battle/menu';
 import { TapTimingBar } from '../battle/tapbar';
@@ -56,6 +57,7 @@ export class BattleScene extends Phaser.Scene {
   private endShown = false;
   private moodShown = false;
   private unsub: Array<() => void> = [];
+  private claiming = false;
 
   constructor() { super('Battle'); }
 
@@ -66,7 +68,7 @@ export class BattleScene extends Phaser.Scene {
     this.command = undefined; this.moveMenu = undefined; this.overlay = undefined;
     this.info = []; this.idle = {}; this.unsub = [];
     this.deadline = 0; this.cmdTurn = -1; this.lastPlayed = -1;
-    this.playing = false; this.endShown = false; this.moodShown = false;
+    this.playing = false; this.endShown = false; this.moodShown = false; this.claiming = false;
   }
 
   // ─────────────────────────────── build ───────────────────────────────────
@@ -93,7 +95,8 @@ export class BattleScene extends Phaser.Scene {
     this.unsub.push(
       this.s.onTurn(() => { /* picked up by poll() */ }),
       this.s.onEnd(() => { /* picked up by poll() */ }),
-      this.s.onClaim((st) => { EventBus.emit('claim:status', st); this.overlay?.setClaim(st); }),
+      // Server refusals arrive here; wallet progress arrives from claimWithWallet. Both feed one status.
+      this.s.onClaim((st) => { if (!this.claiming) this.pushClaim(st); }),
       this.s.onConn((c) => this.onConn(c)),
       this.s.onRejected((r) => this.onRejected(r)),
     );
@@ -518,10 +521,30 @@ export class BattleScene extends Phaser.Scene {
     await delay(this, 250);
     this.overlay = new EndOverlay(this, {
       won, end,
-      onClaim: () => { this.s.requestClaim(); EventBus.emit('claim:request'); },
+      onClaim: () => void this.claim(),
       onContinue: () => void this.close(),
     });
-    if (this.s.lastClaim) this.overlay.setClaim(this.s.lastClaim);
+  }
+
+  private pushClaim(st: ClaimStatus) {
+    EventBus.emit('claim:status', st);
+    this.overlay?.setClaim(st);
+  }
+
+  /** The winner's own wallet submits the signed voucher; the player sees their wallet pop up. */
+  private async claim() {
+    if (this.claiming) return;
+    this.claiming = true;
+    EventBus.emit('claim:request');
+    // Keys typed into the wallet dialog must not drive the game while it is open.
+    const kb = this.input.keyboard;
+    if (kb) kb.enabled = false;
+    try {
+      await claimWithWallet(this.s, (st) => this.pushClaim(st));
+    } finally {
+      if (kb) kb.enabled = true;
+      this.claiming = false;
+    }
   }
 
   private async close() {

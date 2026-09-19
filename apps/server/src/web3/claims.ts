@@ -1,19 +1,16 @@
-import {
-  createPublicClient, createWalletClient, http, defineChain, keccak256, toBytes, parseEventLogs,
-  type Address, type Hex, type PublicClient, type WalletClient,
-} from 'viem';
+import { keccak256, toBytes, isAddress, getAddress, type Address } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
-import { nonceManager } from 'viem/nonce';
-import { arenaAbi, arenaEip712Domain, claimEip712Types, claimEip712PrimaryType, tickerToBytes32 } from 'contracts-abi';
-import type { ClaimStatus } from 'game-core';
+import { arenaEip712Domain, claimEip712Types, claimEip712PrimaryType, tickerToBytes32 } from 'contracts-abi';
+import type { ClaimVoucher } from 'game-core';
 import { config } from '../config.ts';
 import type { PriceService } from './prices.ts';
 
-export interface ClaimRequest {
+export interface VoucherRequest {
   roomId: string;
   /** Stable per-room nonce so a restart can't reuse a room id. */
   roomStamp: number;
-  winner: Address;
+  /** Wallet that receives the reward (and submits the voucher). */
+  to: string;
   loser?: Address;
   /** Prize ticker (the loser's stock), e.g. "TSLA". */
   ticker: string;
@@ -26,152 +23,87 @@ export interface ClaimRequest {
   level: number;
 }
 
-const monadTestnet = defineChain({
-  id: 10143,
-  name: 'Monad Testnet',
-  nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-  rpcUrls: { default: { http: ['https://testnet-rpc.monad.xyz'] } },
-});
+export type VoucherResult = { ok: true; voucher: ClaimVoucher } | { ok: false; error: string };
 
-const pythAbi = [
-  { type: 'function', name: 'getUpdateFee', stateMutability: 'view', inputs: [{ name: 'updateData', type: 'bytes[]' }], outputs: [{ name: 'feeAmount', type: 'uint256' }] },
-] as const;
+const ZERO = '0x0000000000000000000000000000000000000000' as Address;
 
 /**
- * Relays reward vouchers on-chain so players never sign or pay gas.
- *  1. server signs an EIP-712 `Claim` voucher (the contract trusts only this signer),
- *  2. server fetches a fresh signed Pyth blob and submits `BattleArena.claim` from its relayer,
- *  3. streams status back. Idempotent per room; rate-limited per wallet.
+ * Signs EIP-712 reward vouchers. The server holds no gas money and sends no transactions: the winner's
+ * own wallet submits the voucher to `BattleArena.claim` and pays the network fee in MON. The contract
+ * trusts only this signer, marks each room claimed once, and pays out to `winner` whoever submits.
  */
-export class ClaimService {
+export class VoucherService {
   readonly enabled: boolean;
-  private readonly pub?: PublicClient;
-  private readonly wallet?: WalletClient;
   private readonly signer?: PrivateKeyAccount;
-  private readonly relayer?: PrivateKeyAccount;
   private readonly arena?: Address;
-  private readonly inflight = new Map<string, Promise<ClaimStatus>>();
+  private readonly issued = new Map<string, ClaimVoucher>();
   private readonly history = new Map<string, number[]>();
 
   constructor(private readonly prices: PriceService) {
-    const { signerKey, relayerKey, arenaAddress } = config;
-    this.enabled = Boolean(signerKey && relayerKey && arenaAddress);
+    this.enabled = Boolean(config.signerKey && config.arenaAddress);
     if (!this.enabled) return;
-    const chain = { ...monadTestnet, id: config.chainId, rpcUrls: { default: { http: [config.rpcUrl] } } };
-    this.signer = privateKeyToAccount(signerKey!);
-    this.relayer = privateKeyToAccount(relayerKey!, { nonceManager });
-    this.arena = arenaAddress;
-    this.pub = createPublicClient({ chain, transport: http(config.rpcUrl, { timeout: 15_000, retryCount: 2 }) });
-    this.wallet = createWalletClient({ account: this.relayer, chain, transport: http(config.rpcUrl, { timeout: 15_000, retryCount: 2 }) });
+    this.signer = privateKeyToAccount(config.signerKey!);
+    this.arena = config.arenaAddress;
   }
 
   private allowed(wallet: string): boolean {
     const now = Date.now();
-    const list = (this.history.get(wallet.toLowerCase()) ?? []).filter((t) => now - t < 3_600_000);
-    if (list.length >= config.maxClaimsPerHour) { this.history.set(wallet.toLowerCase(), list); return false; }
+    const key = wallet.toLowerCase();
+    const list = (this.history.get(key) ?? []).filter((t) => now - t < 3_600_000);
+    if (list.length >= config.maxClaimsPerHour) { this.history.set(key, list); return false; }
     list.push(now);
-    this.history.set(wallet.toLowerCase(), list);
+    this.history.set(key, list);
     return true;
   }
 
-  /** Runs (or joins) the claim for a room. Never throws; resolves with the terminal status. */
-  claim(req: ClaimRequest, onStatus: (s: ClaimStatus) => void): Promise<ClaimStatus> {
-    const existing = this.inflight.get(req.roomId);
-    if (existing) { existing.then(onStatus); return existing; }
-    const p = this.run(req, onStatus).catch((e): ClaimStatus => {
-      const s: ClaimStatus = { state: 'failed', error: shortError(e) };
-      onStatus(s);
-      return s;
-    });
-    this.inflight.set(req.roomId, p);
-    return p;
-  }
-
-  private async run(req: ClaimRequest, onStatus: (s: ClaimStatus) => void): Promise<ClaimStatus> {
-    if (!this.enabled || !this.pub || !this.wallet || !this.signer || !this.relayer || !this.arena) {
-      const s: ClaimStatus = { state: 'ineligible', error: 'Rewards are not live on this server yet. Your win still counts on the leaderboard.' };
-      onStatus(s);
-      return s;
+  /** Never throws. Re-requesting the same room returns the same voucher (the chain still pays once). */
+  async issue(req: VoucherRequest): Promise<VoucherResult> {
+    if (!this.enabled || !this.signer || !this.arena) {
+      return { ok: false, error: 'Rewards are not live on this server yet. Your win still counts.' };
     }
-    if (!this.allowed(req.winner)) {
-      const s: ClaimStatus = { state: 'ineligible', error: 'Reward limit reached for this wallet. Try again in an hour.' };
-      onStatus(s);
-      return s;
+    if (!isAddress(req.to)) return { ok: false, error: 'Connect a wallet to receive your reward.' };
+    const to = getAddress(req.to);
+    const prior = this.issued.get(req.roomId);
+    if (prior) {
+      return prior.claim.winner === to ? { ok: true, voucher: prior } : { ok: false, error: 'This reward was already issued to another wallet.' };
     }
-    onStatus({ state: 'signing' });
+    if (req.loser && to === getAddress(req.loser)) return { ok: false, error: 'You cannot claim a reward to your opponent\'s wallet.' };
+    if (!this.allowed(to)) return { ok: false, error: 'Reward limit reached for this wallet. Try again in an hour.' };
 
-    const roomId = keccak256(toBytes(`${req.roomId}:${req.roomStamp}`));
-    const ticker = tickerToBytes32(req.ticker);
-    const claim = {
-      winner: req.winner,
-      loser: req.loser ?? ('0x0000000000000000000000000000000000000000' as Address),
-      roomId,
-      ticker,
-      baseAmount: req.humanFoe ? config.rewardHumanWei : config.rewardBotWei,
-      captureSpeciesId: req.humanFoe ? req.captureSpeciesNum : 0,
-      captureLevel: req.level,
-      deadline: BigInt(Math.floor(Date.now() / 1000) + 600),
-    } as const;
-
-    const sig = await this.signer.signTypedData({
-      domain: arenaEip712Domain(config.chainId, this.arena),
-      types: claimEip712Types,
-      primaryType: claimEip712PrimaryType,
-      message: claim,
-    });
-
-    const priceUpdate = await this.prices.updateData(req.prizeSpeciesId);
-    let value = 0n;
-    if (priceUpdate.length > 0) {
-      try {
-        value = await this.pub.readContract({ address: config.pythAddress, abi: pythAbi, functionName: 'getUpdateFee', args: [priceUpdate] });
-      } catch { value = 0n; }
-    }
-
-    const args = [claim, sig, priceUpdate] as const;
-    // Monad charges on gasLimit, not gas used: estimate precisely and add a small margin.
-    let gas: bigint;
     try {
-      gas = await this.pub.estimateContractGas({ address: this.arena, abi: arenaAbi, functionName: 'claim', args, value, account: this.relayer.address });
+      const claim = {
+        winner: to,
+        loser: req.loser ?? ZERO,
+        roomId: keccak256(toBytes(`${req.roomId}:${req.roomStamp}`)),
+        ticker: tickerToBytes32(req.ticker),
+        baseAmount: req.humanFoe ? config.rewardHumanWei : config.rewardBotWei,
+        captureSpeciesId: req.humanFoe ? req.captureSpeciesNum : 0,
+        captureLevel: req.level,
+        // Long enough to sit through a wallet prompt, a chain switch and a retry.
+        deadline: BigInt(Math.floor(Date.now() / 1000) + 30 * 60),
+      } as const;
+      const sig = await this.signer.signTypedData({
+        domain: arenaEip712Domain(config.chainId, this.arena),
+        types: claimEip712Types,
+        primaryType: claimEip712PrimaryType,
+        message: claim,
+      });
+      const voucher: ClaimVoucher = {
+        chainId: config.chainId,
+        arena: this.arena,
+        pyth: config.pythAddress,
+        claim: {
+          ...claim,
+          baseAmount: claim.baseAmount.toString(),
+          deadline: claim.deadline.toString(),
+        },
+        sig,
+        priceUpdate: await this.prices.updateData(req.prizeSpeciesId),
+      };
+      this.issued.set(req.roomId, voucher);
+      return { ok: true, voucher };
     } catch (e) {
-      // Retry the simulation without the Pyth update: a bad blob must not block the reward.
-      if (priceUpdate.length === 0) throw e;
-      gas = await this.pub.estimateContractGas({ address: this.arena, abi: arenaAbi, functionName: 'claim', args: [claim, sig, []], value: 0n, account: this.relayer.address });
-      return this.submit(claim, sig, [], 0n, gas, onStatus);
+      return { ok: false, error: e instanceof Error ? e.message.slice(0, 160) : 'Could not sign the reward.' };
     }
-    return this.submit(claim, sig, priceUpdate, value, gas, onStatus);
   }
-
-  private async submit(
-    claim: { winner: Address; loser: Address; roomId: Hex; ticker: Hex; baseAmount: bigint; captureSpeciesId: number; captureLevel: number; deadline: bigint },
-    sig: Hex, priceUpdate: readonly Hex[], value: bigint, gas: bigint, onStatus: (s: ClaimStatus) => void,
-  ): Promise<ClaimStatus> {
-    const hash = await this.wallet!.writeContract({
-      address: this.arena!, abi: arenaAbi, functionName: 'claim', args: [claim, sig, priceUpdate as Hex[]],
-      value, gas: (gas * 125n) / 100n, account: this.relayer!, chain: this.wallet!.chain,
-    });
-    onStatus({ state: 'submitted', txHash: hash });
-    const receipt = await this.pub!.waitForTransactionReceipt({ hash, timeout: 60_000 });
-    if (receipt.status !== 'success') {
-      const s: ClaimStatus = { state: 'failed', txHash: hash, error: 'The reward transaction reverted on-chain.' };
-      onStatus(s);
-      return s;
-    }
-    const logs = parseEventLogs({ abi: arenaAbi, logs: receipt.logs, eventName: 'Claimed' });
-    const ev = logs[0]?.args as { minted?: bigint; buffBps?: number; nftId?: bigint } | undefined;
-    const s: ClaimStatus = {
-      state: 'confirmed',
-      txHash: hash,
-      minted: ev?.minted?.toString(),
-      buffBps: ev?.buffBps !== undefined ? Number(ev.buffBps) : undefined,
-      nftId: ev?.nftId && ev.nftId > 0n ? ev.nftId.toString() : undefined,
-    };
-    onStatus(s);
-    return s;
-  }
-}
-
-function shortError(e: unknown): string {
-  const msg = e instanceof Error ? (('shortMessage' in e && typeof (e as any).shortMessage === 'string') ? (e as any).shortMessage : e.message) : String(e);
-  return msg.replace(/\s+/g, ' ').slice(0, 180);
 }

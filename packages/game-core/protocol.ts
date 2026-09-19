@@ -45,7 +45,8 @@ export interface ClientMessages {
   /** Client finished playing a turn's animations; the server opens the next COMMAND when both ack. */
   turnAck: { turnNo: number };
   flee: Record<string, never>;
-  requestClaim: Record<string, never>;
+  /** Winner asks for a signed reward voucher, paid out to `to` (the wallet they will submit it from). */
+  requestClaim: { to: string };
 }
 
 export type EndReason = 'faint' | 'flee' | 'forfeit' | 'disconnect';
@@ -61,7 +62,34 @@ export interface BattleEnd {
   claimable: boolean;
 }
 
-export type ClaimState = 'signing' | 'submitted' | 'confirmed' | 'failed' | 'ineligible';
+/**
+ * Claim progress as shown to the player. The server only ever reports `ineligible`; every other state
+ * is produced client-side while the player's own wallet submits the voucher.
+ */
+export type ClaimState = 'signing' | 'wallet' | 'submitted' | 'confirmed' | 'failed' | 'ineligible';
+
+/**
+ * A server-signed EIP-712 reward voucher. Integers are decimal strings so the message survives JSON.
+ * Anyone may submit it to `BattleArena.claim`; the reward always goes to `claim.winner`.
+ */
+export interface ClaimVoucher {
+  chainId: number;
+  arena: string;
+  pyth: string;
+  claim: {
+    winner: string;
+    loser: string;
+    roomId: string;
+    ticker: string;
+    baseAmount: string;
+    captureSpeciesId: number;
+    captureLevel: number;
+    deadline: string;
+  };
+  sig: string;
+  /** Signed Pyth price update to push with the claim (empty when unavailable). */
+  priceUpdate: string[];
+}
 
 export interface ClaimStatus {
   state: ClaimState;
@@ -80,6 +108,7 @@ export interface ServerMessages {
   turnResolved: TurnResolved;
   battleEnd: BattleEnd;
   claimStatus: ClaimStatus;
+  claimVoucher: ClaimVoucher;
   /** Live per-seat mood update from Pyth. */
   mood: { A: number; B: number; pctA: number; pctB: number };
   /** Non-fatal rejection, e.g. an illegal move. Client just re-opens the menu. */
@@ -96,6 +125,7 @@ export const MSG = {
   turnResolved: 'turnResolved',
   battleEnd: 'battleEnd',
   claimStatus: 'claimStatus',
+  claimVoucher: 'claimVoucher',
   mood: 'mood',
   rejected: 'rejected',
 } as const;

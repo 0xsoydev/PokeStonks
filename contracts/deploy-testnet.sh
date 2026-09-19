@@ -20,7 +20,7 @@ DEPLOYER="$(cast wallet address --private-key "$PRIVATE_KEY")"
 BAL="$(cast balance "$DEPLOYER" --rpc-url "$RPC" --ether)"
 echo "Deployer: $DEPLOYER"
 echo "Balance : $BAL MON"
-awk "BEGIN{exit !($BAL >= 5)}" || { echo "✗ Need at least ~5 MON for deployment gas. Faucet: https://faucet.monad.xyz"; exit 1; }
+awk "BEGIN{exit !($BAL >= 3)}" || { echo "✗ Need at least ~3 MON for deployment gas. Faucet: https://faucet.monad.xyz"; exit 1; }
 
 echo "→ tests"; forge test -q
 echo "→ deploying (12 tokens + NFT + arena; sequential)"
