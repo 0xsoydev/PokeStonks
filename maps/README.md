@@ -9,6 +9,7 @@ Preview: `pnpm dev` → http://localhost:3000/maps
 - Arrow keys — walk (grid-step, GBA style)
 - Shift (hold) — run
 - Z / Enter / Space — read signs & mailboxes, catch poké balls
+- P — switch your pokémon (Pikachu → Charmander → Bulbasaur → Squirtle → Eevee)
 - Click ground — click-to-move
 - C — collision debug overlay
 
@@ -30,6 +31,14 @@ maps/
 `public/maps/` is generated output (gitignored). Edit `meadowbrook.tmj` in the
 [Tiled editor](https://www.mapeditor.org/), then restart `pnpm dev` (or rerun
 `node maps/scripts/copy-map-assets.mjs`).
+
+## Player pokémon (PokéAPI)
+
+The player is an actual Pokémon: Gen-V **animated GIFs** from the PokéAPI
+sprites CDN (`raw.githubusercontent.com/PokeAPI/sprites`), so they genuinely
+move. Down = front gif, up = back gif, left/right = mirrored front. Fallback
+chain: animated gif → Gen-III Emerald static → local trainer sheet (offline).
+Switch with **P**; the active 'mon shows in the HUD.
 
 ## Game hooks (from the tmj)
 

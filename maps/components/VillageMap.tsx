@@ -53,6 +53,17 @@ interface Pin {
 
 const PINS = (pinsData as { pins: Pin[] }).pins;
 
+// --- pokeapi sprites (player is an actual pokemon) ---
+// Gen-V animated gifs = real movement; fallbacks: Gen-III emerald static -> trainer sheet
+const SPRITES_CDN = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon';
+const STARTERS = [
+  { id: 25, name: 'Pikachu' },
+  { id: 4, name: 'Charmander' },
+  { id: 1, name: 'Bulbasaur' },
+  { id: 7, name: 'Squirtle' },
+  { id: 133, name: 'Eevee' },
+];
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -69,6 +80,7 @@ export default function VillageMap() {
   const [caughtList, setCaughtList] = useState<string[]>([]);
   const [mapName, setMapName] = useState('');
   const [banner, setBanner] = useState(false);
+  const [monName, setMonName] = useState('');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -139,6 +151,36 @@ export default function VillageMap() {
     const cam = { x: 0, y: 0 };
     let S = 3;
     let last = performance.now();
+
+    // --- pokemon sprites (loaded async, trainer sheet is the fallback) ---
+    let mon: { id: number; name: string; front: HTMLImageElement | null; back: HTMLImageElement | null } | null = null;
+    let monIx = 0;
+    const tryImage = (url: string) =>
+      new Promise<HTMLImageElement | null>((res) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = () => res(null);
+        img.src = url;
+      });
+    const loadMon = async (id: number, name: string) => {
+      // animated gen-V gifs first, gen-III/static as fallback per direction
+      const front =
+        (await tryImage(`${SPRITES_CDN}/versions/generation-v/black-white/animated/${id}.gif`)) ??
+        (await tryImage(`${SPRITES_CDN}/versions/generation-iii/emerald/${id}.png`));
+      const back =
+        (await tryImage(`${SPRITES_CDN}/versions/generation-v/black-white/animated/back/${id}.gif`)) ??
+        (await tryImage(`${SPRITES_CDN}/back/${id}.png`));
+      if (cancelled) return;
+      mon = { id, name, front, back };
+      setMonName(name);
+    };
+    const cycleMon = () => {
+      monIx = (monIx + 1) % STARTERS.length;
+      const s = STARTERS[monIx];
+      mon = null; // trainer shows until the new sprites arrive
+      setMonName('');
+      void loadMon(s.id, s.name);
+    };
 
     const solidAt = (x: number, y: number) => {
       if (x < 0 || y < 0 || x >= W || y >= H) return true;
@@ -257,6 +299,7 @@ export default function VillageMap() {
         if (dialog) dialog = null; // arrows also dismiss dialogue
       } else if (e.key === 'Shift') running = true;
       else if (e.key.toLowerCase() === 'c') showCol = !showCol;
+      else if (e.key.toLowerCase() === 'p' && !e.repeat) cycleMon();
       else if (e.key === 'z' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         if (!e.repeat) interact();
@@ -429,19 +472,7 @@ export default function VillageMap() {
       drawLayerPx(ground);
       drawLayerPx(objs);
       for (const p of PINS) if (!caught.has(p.symbol)) drawPin(p);
-      let f = 0;
-      if (pl.moving && pl.prog > 0.2 && pl.prog < 0.8) f = pl.alt ? 1 : 2;
-      ctx.drawImage(
-        plImg,
-        f * 16,
-        pl.dir * 16,
-        16,
-        16,
-        Math.round((px - cam.x) * S),
-        Math.round((py - cam.y) * S),
-        16 * S,
-        16 * S,
-      );
+      drawPlayer(px, py, plImg);
       drawLayerPx(above);
       if (showCol) {
         ctx.fillStyle = 'rgba(255,40,40,.35)';
@@ -456,6 +487,53 @@ export default function VillageMap() {
               );
       }
       if (dialog) drawDialog();
+    };
+
+    const drawPlayer = (px: number, py: number, plImg: HTMLImageElement) => {
+      const feetSx = Math.round((px + TS / 2 - cam.x) * S); // feet-center, screen px
+      const feetSy = Math.round((py + TS - 2 - cam.y) * S);
+      const monImg =
+        mon ? (pl.dir === 3 ? (mon.back ?? mon.front) : mon.front) : null;
+      if (monImg) {
+        // fit sprite into ~1.6 tiles, anchored feet-center
+        const maxW = 26;
+        const maxH = 26;
+        const scale = Math.min(maxW / monImg.width, maxH / monImg.height);
+        const w = Math.round(monImg.width * scale * S);
+        const h = Math.round(monImg.height * scale * S);
+        const dx = Math.round(feetSx - w / 2);
+        const dy = Math.round(feetSy - h);
+        // shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(feetSx, feetSy - S, Math.max(6 * S, w * 0.22), Math.max(2 * S, h * 0.05), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.save();
+        if (pl.dir === 1) {
+          // left = mirrored front sprite
+          ctx.translate(dx + w, dy);
+          ctx.scale(-1, 1);
+          ctx.drawImage(monImg, 0, 0, w, h);
+        } else {
+          ctx.drawImage(monImg, dx, dy, w, h);
+        }
+        ctx.restore();
+        return;
+      }
+      // fallback: trainer sheet (16x16 frames: 3 walk frames x 4 directions)
+      let f = 0;
+      if (pl.moving && pl.prog > 0.2 && pl.prog < 0.8) f = pl.alt ? 1 : 2;
+      ctx.drawImage(
+        plImg,
+        f * 16,
+        pl.dir * 16,
+        16,
+        16,
+        Math.round((px - cam.x) * S),
+        Math.round((py - cam.y) * S),
+        16 * S,
+        16 * S,
+      );
     };
 
     const loop = (now: number) => {
@@ -499,6 +577,7 @@ export default function VillageMap() {
         raf = requestAnimationFrame(loop);
         const t = setTimeout(() => setBanner(false), 2600);
         cleanupTimer = () => clearTimeout(t);
+        void loadMon(STARTERS[0].id, STARTERS[0].name); // Pikachu first
       })
       .catch((err) => {
         console.error(err);
@@ -543,18 +622,27 @@ export default function VillageMap() {
         </div>
       )}
       {/* HUD */}
-      <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-black/70 px-4 py-2 text-sm text-white">
-        {caughtList.length > 0 ? (
-          <>
-            <span className="font-bold text-purple-300">bag:</span>{' '}
-            <span className="text-white/80">{caughtList.join(', ')}</span>
-          </>
-        ) : (
-          <span className="text-white/70">5 poké balls hidden in the village — go catch stocks</span>
+      <div className="pointer-events-none absolute left-4 top-4 space-y-2 text-sm text-white">
+        {monName && (
+          <div className="rounded-lg bg-black/70 px-4 py-1.5">
+            <span className="text-white/50">walking as </span>
+            <span className="font-bold text-yellow-300">{monName}</span>
+            <span className="text-xs text-white/40"> · P to switch</span>
+          </div>
         )}
+        <div className="rounded-lg bg-black/70 px-4 py-1.5">
+          {caughtList.length > 0 ? (
+            <>
+              <span className="font-bold text-purple-300">bag:</span>{' '}
+              <span className="text-white/80">{caughtList.join(', ')}</span>
+            </>
+          ) : (
+            <span className="text-white/70">5 poké balls hidden in the village — go catch stocks</span>
+          )}
+        </div>
       </div>
       <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-black/60 px-4 py-1.5 text-xs text-white/70">
-        arrow keys to move · shift to run · z/enter to read signs &amp; catch · click ground to walk · c = collision
+        arrow keys to move · shift to run · z/enter to read signs &amp; catch · p to switch pokémon · c = collision
       </div>
     </div>
   );
