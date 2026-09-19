@@ -55,17 +55,15 @@ export default function Globe() {
   }, []);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#87CEEB' }}>
-      {/* ponytail: flat backdrop, setSky() atmosphere when globe styling gets a pass */}
-      {/* ponytail: blast sits under the map; canvas void is transparent so it shows through. ripples won't fire (map eats pointer events) — ambient only */}
+    <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#E2F0FF' }}>
       <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}>
         <PixelBlast
-          variant="circle"
-          pixelSize={6}
-          color="#B497CF"
-          patternScale={3}
-          patternDensity={1.2}
-          pixelSizeJitter={0.5}
+          variant="square"
+          pixelSize={4}
+          color="#94C6FC"
+          patternScale={2.25}
+          patternDensity={0.35}
+          pixelSizeJitter={0}
           enableRipples
           rippleSpeed={0.4}
           rippleThickness={0.12}
@@ -74,8 +72,8 @@ export default function Globe() {
           liquidStrength={0.12}
           liquidRadius={1.2}
           liquidWobbleSpeed={5}
-          speed={0.6}
-          edgeFade={0.25}
+          speed={1}
+          edgeFade={0}
           transparent
         />
       </div>

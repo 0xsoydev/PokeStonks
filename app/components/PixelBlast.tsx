@@ -118,7 +118,7 @@ const createTouchTexture = (): TouchTexture => {
       const point = trail[i];
       const f = point.force * speed * (1 - point.age / maxAge);
       point.x += point.vx * f;
-      point.y += point.vx * f;
+      point.y += point.vy * f;
       point.age++;
       if (point.age > maxAge) trail.splice(i, 1);
     }
