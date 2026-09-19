@@ -20,6 +20,9 @@ export interface GameEvents {
   'claim:status': ClaimStatus;
   /** Anyone can ask the wallet HUD to refetch balances. */
   'wallet:refresh': void;
+  /** HUD → game: start a private duel (host shows a code; the friend joins with it). */
+  'duel:host': void;
+  'duel:join': { code: string };
   /** Overworld → HUD: transient text like "Healed!" or "A rival Broker challenges you!". */
   'toast': { text: string; tone?: 'info' | 'good' | 'bad' };
 }

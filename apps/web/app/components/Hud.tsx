@@ -13,6 +13,7 @@ import { audio } from '../game/audio';
 import { Icon } from './Icon';
 import { Portrait } from './Portrait';
 import Toasts from './Toasts';
+import DuelDialog from './DuelDialog';
 import { Button, Panel } from './ui';
 
 function useMuted(): boolean {
@@ -35,6 +36,7 @@ export default function Hud() {
   const wallet = useWalletData(address);
   const muted = useMuted();
   const [open, setOpen] = useState(false);
+  const [duel, setDuel] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -148,6 +150,11 @@ export default function Hud() {
         >
           <Icon name={muted ? 'soundOff' : 'soundOn'} size={18} />
         </Button>
+        {playing && (
+          <Button variant="quiet" small aria-label="Duel a friend" title="Duel a friend" onClick={() => { audio.sfx('menu_select'); setDuel(true); }}>
+            <Icon name="swap" size={18} /> <span className="font-pixel t-8">Duel</span>
+          </Button>
+        )}
         {!playing && (
           <>
             <Link href="/collection" className="btn btn-quiet btn-sm btn-icon" aria-label="Open your collection" title="Collection" onClick={() => audio.sfx('menu_select')}>
@@ -184,6 +191,7 @@ export default function Hud() {
       </div>
 
       <Toasts />
+      {duel && <DuelDialog onClose={() => setDuel(false)} />}
       <span className="sr-only-x" role="status">
         {copied ? 'Wallet address copied' : ''}
       </span>

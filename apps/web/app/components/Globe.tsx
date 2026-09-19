@@ -268,8 +268,9 @@ export default function Globe() {
 
       <div
         ref={containerRef}
-        className="absolute inset-0"
-        style={{ pointerEvents: onGlobe && !playing ? 'auto' : 'none' }}
+        // Inline on purpose: maplibre-gl.css sets `.maplibregl-map { position: relative }`, which beats a
+        // Tailwind `absolute inset-0` class and collapses the map to its 300px default height.
+        style={{ position: 'absolute', inset: 0, pointerEvents: onGlobe && !playing ? 'auto' : 'none' }}
       />
 
       {engine && onGlobe && (

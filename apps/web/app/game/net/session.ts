@@ -84,24 +84,39 @@ export class BattleSession {
     room.onError(() => { /* surfaced through onLeave */ });
   }
 
-  /** Join (or create) a quick-match room. Retries transient failures; throws a readable Error. */
-  static async join(opts: Omit<BattleJoinOptions, 'protocol'>): Promise<BattleSession> {
+  private static async connect(make: (c: Client) => Promise<Room<any, any>>): Promise<BattleSession> {
     const client = new Client(colyseusUrl());
     let last: unknown;
     for (let i = 0; i < 3; i++) {
       try {
-        const room = await client.joinOrCreate(ROOM_NAME, { ...opts, protocol: PROTOCOL_VERSION });
+        const room = await make(client);
         // The first state patch can land a tick after the join resolves.
         if (!room.state) await new Promise<void>((res) => room.onStateChange.once(() => res()));
         return new BattleSession(client, room);
       } catch (e: any) {
         last = e;
         const code = e?.code;
-        if (code === 4426 || code === 4400) break; // out-of-date client / bad options: retrying can't help
+        // Out-of-date client / bad options / unknown duel code: retrying can't help.
+        if (code === 4426 || code === 4400 || code === 4404 || /not found/i.test(e?.message ?? '')) break;
         await sleep(500 * (i + 1));
       }
     }
     throw new Error(readable(last));
+  }
+
+  /** Join (or create) a quick-match room. Retries transient failures; throws a readable Error. */
+  static join(opts: Omit<BattleJoinOptions, 'protocol' | 'mode'>): Promise<BattleSession> {
+    return BattleSession.connect((c) => c.joinOrCreate(ROOM_NAME, { ...opts, mode: 'quick', protocol: PROTOCOL_VERSION }));
+  }
+
+  /** Host a private duel. The room id is a short shareable code. */
+  static host(opts: Omit<BattleJoinOptions, 'protocol' | 'mode'>): Promise<BattleSession> {
+    return BattleSession.connect((c) => c.create(ROOM_NAME, { ...opts, mode: 'private', protocol: PROTOCOL_VERSION }));
+  }
+
+  /** Join a friend's duel by its code. */
+  static joinCode(code: string, opts: Omit<BattleJoinOptions, 'protocol' | 'mode'>): Promise<BattleSession> {
+    return BattleSession.connect((c) => c.joinById(code.trim().toUpperCase(), { ...opts, mode: 'private', protocol: PROTOCOL_VERSION }));
   }
 
   // ─────────────────────────────── state ───────────────────────────────────
@@ -196,6 +211,7 @@ export class BattleSession {
 function readable(e: unknown): string {
   const err = e as { code?: number; message?: string } | undefined;
   if (err?.code === 4426) return 'Your game is out of date. Refresh the page.';
+  if (err?.code === 4404 || /not found/i.test(err?.message ?? '')) return 'No duel found with that code. Check it and try again.';
   if (err?.code === 4409) return 'That wallet is already in a match. Give it a moment and try again.';
   const m = err?.message ?? '';
   if (/fetch failed|Failed to fetch|NetworkError|ECONNREFUSED|WebSocket/i.test(m) || !m) {

@@ -15,7 +15,7 @@ import { C, H, W, TYPE_COLOR, delay, drawFrame, hex, isTouch, tweenP, txt } from
 export interface BattleInit {
   session: BattleSession;
   marketId: string;
-  kind: 'wild' | 'trainer';
+  kind: 'wild' | 'trainer' | 'duel';
   trainerName?: string;
 }
 
@@ -199,7 +199,9 @@ export class BattleScene extends Phaser.Scene {
     const foeName = foe.name.toUpperCase();
     const snap = this.s.snapshot();
     const foeP = snap?.players[this.foeSeat];
-    if (kind === 'trainer') {
+    if (kind === 'duel') {
+      await this.dialog.say(`${foeName} steps up for a duel!`, { holdMs: 750 });
+    } else if (kind === 'trainer') {
       await this.dialog.say(`${(trainerName ?? 'A rival BROKER').toUpperCase()} wants to battle!`, { holdMs: 750 });
       await this.dialog.say(`They sent out ${foeName}!`, { holdMs: 650 });
     } else {
