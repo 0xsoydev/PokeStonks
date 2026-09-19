@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import type { TapCategory } from 'game-core';
 import { audio } from '../audio';
 import { C, H, W, drawFrame, hex, txt } from './ui';

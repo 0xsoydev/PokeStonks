@@ -109,6 +109,11 @@ export class BattleSession {
     return BattleSession.connect((c) => c.joinOrCreate(ROOM_NAME, { ...opts, mode: 'quick', protocol: PROTOCOL_VERSION }));
   }
 
+  /** Instant bot match, no rewards (used for practice and as a dev harness). */
+  static practice(opts: Omit<BattleJoinOptions, 'protocol' | 'mode'>): Promise<BattleSession> {
+    return BattleSession.connect((c) => c.create(ROOM_NAME, { ...opts, mode: 'practice', protocol: PROTOCOL_VERSION }));
+  }
+
   /** Host a private duel. The room id is a short shareable code. */
   static host(opts: Omit<BattleJoinOptions, 'protocol' | 'mode'>): Promise<BattleSession> {
     return BattleSession.connect((c) => c.create(ROOM_NAME, { ...opts, mode: 'private', protocol: PROTOCOL_VERSION }));

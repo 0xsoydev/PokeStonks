@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import type { Affinity } from 'game-core';
 import { audio } from '../audio';
 import { delay, tweenP, txt, TYPE_COLOR } from './ui';

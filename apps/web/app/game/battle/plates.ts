@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import type { StatKey } from 'game-core';
 import { audio } from '../audio';
 import { C, FONT, TYPE_COLOR, drawFrame, hex, hpColor, txt } from './ui';

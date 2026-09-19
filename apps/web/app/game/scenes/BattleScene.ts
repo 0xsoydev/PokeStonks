@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { getMarket, getMove, getSpecies, type SeatKey, type TapCategory } from 'game-core';
 import { BattleSession, type PlayerView, type Snapshot } from '../net/session';
 import { EventBus } from '../net/events';
@@ -75,7 +75,7 @@ export class BattleScene extends Phaser.Scene {
     audio.bgm('battle');
     this.cameras.main.fadeIn(380, 0, 0, 0);
     const snap = this.s.snapshot();
-    if (!snap) { this.bail('The match is no longer available.'); return; }
+    if (!snap || !snap.players.A || !snap.players.B) { this.bail('The match is no longer available.'); return; }
     this.mySeat = this.s.mySeat() ?? 'A';
     this.foeSeat = other(this.mySeat);
 
@@ -120,8 +120,8 @@ export class BattleScene extends Phaser.Scene {
       this.tweens.add({ targets: c, x: c.x + 60, duration: 9000 + i * 2500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
     for (const [k, p] of [['foe', POS.foe], ['ally', POS.ally]] as const) {
-      const tex = `platform_${k}`;
-      if (this.textures.exists(tex)) this.add.image(p.x, p.platY, tex).setDepth(2);
+      const tex = [`platform_${k}_${theme}`, `platform_${k}`].find((t) => this.textures.exists(t));
+      if (tex) this.add.image(p.x, p.platY, tex).setDepth(2);
       else this.add.ellipse(p.x, p.platY, k === 'foe' ? 260 : 330, k === 'foe' ? 64 : 84, 0x5aa050, 1).setStrokeStyle(4, 0x3f7a3a).setDepth(2);
     }
   }
@@ -337,6 +337,7 @@ export class BattleScene extends Phaser.Scene {
     const me = this.me(snap)!, foe = this.foe(snap)!;
     if (id === 'fight') {
       this.command!.hide();
+      this.dialog.clear();
       this.mode = 'moves';
       this.moveMenu?.destroy();
       this.moveMenu = new MoveMenu(this, foe.mon.affinity as Combatant['affinity'], (mv) => void this.onPickMove(mv), () => this.backToCommand());

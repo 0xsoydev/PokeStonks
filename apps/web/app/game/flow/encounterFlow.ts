@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { BattleSession } from '../net/session';
 import { EventBus } from '../net/events';
 import { audio } from '../audio';

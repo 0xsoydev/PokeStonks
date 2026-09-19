@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { getMove, type SeatKey, type TurnEvent } from 'game-core';
 import { audio } from '../audio';
 import type { DialogBox } from './dialog';

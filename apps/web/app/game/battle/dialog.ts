@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { C, H, W, drawFrame, txt } from './ui';
 import { audio } from '../audio';
 

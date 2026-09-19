@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import type { BattleEnd, ClaimStatus } from 'game-core';
 import { audio } from '../audio';
 import { C, H, W, drawFrame, formatToken, txt } from './ui';
@@ -40,7 +40,7 @@ export class EndOverlay {
       const prize = txt(scene, W / 2, 318, `PRIZE: s${end.ticker}`, 16, '#f8d858').setOrigin(0.5).setDepth(102);
       this.objs.push(prize);
     }
-    this.status = txt(scene, W / 2, 358, won && !end.claimable ? 'Rewards are only paid in live matches.' : '', 11, '#ffffff', { align: 'center', wordWrap: { width: 600 } }).setOrigin(0.5, 0).setDepth(102);
+    this.status = txt(scene, W / 2, 358, won && !end.claimable ? 'Rewards are only paid in live matches.' : '', 11, '#ffffff', { align: 'center', wordWrap: { width: 600 }, lineSpacing: 12 }).setOrigin(0.5, 0).setDepth(102);
     this.objs.push(this.status);
 
     let bx = W / 2 - 110;
