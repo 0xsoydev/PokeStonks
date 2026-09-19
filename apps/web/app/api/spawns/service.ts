@@ -16,8 +16,9 @@ import {
  * degrades to static prices with `live:false` and the open/closed flag from the metadata route.
  */
 
-const HERMES_URL = (process.env.HERMES_URL || 'https://hermes.pyth.network').replace(/\/+$/, '');
 const API_KEY = process.env.PYTH_API_KEY?.trim() || '';
+// Keyed requests go to Pyth's authenticated Hermes host; the old public host now rejects price routes.
+const HERMES_URL = (process.env.HERMES_URL || (API_KEY ? 'https://pyth.dourolabs.app/hermes' : 'https://hermes.pyth.network')).replace(/\/+$/, '');
 const PRICE_TTL_MS = 30_000;
 const HOURS_TTL_MS = 5 * 60_000;
 const TIMEOUT_MS = 3_000;
@@ -45,18 +46,30 @@ function headers(): HeadersInit {
   return API_KEY ? { Authorization: `Bearer ${API_KEY}`, Accept: 'application/json' } : { Accept: 'application/json' };
 }
 
+async function getFeeds(ids: string[]): Promise<{ status: number; feeds: HermesParsedFeed[] }> {
+  const url = `${HERMES_URL}/v2/updates/price/latest?${ids.map((id) => `ids[]=${id}`).join('&')}&parsed=true&encoding=hex`;
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(TIMEOUT_MS), cache: 'no-store' });
+  if (!res.ok) return { status: res.status, feeds: [] };
+  const body = (await res.json()) as { parsed?: HermesParsedFeed[] };
+  return { status: 200, feeds: Array.isArray(body.parsed) ? body.parsed : [] };
+}
+
 async function fetchPrices(): Promise<PriceResult> {
   const ids = MARKETS.map((m) => getSpecies(m.speciesId).feedId);
-  const url = `${HERMES_URL}/v2/updates/price/latest?${ids.map((id) => `ids[]=${id}`).join('&')}&parsed=true&encoding=hex`;
   try {
-    const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(TIMEOUT_MS), cache: 'no-store' });
-    if (res.status === 401 || res.status === 403) {
+    const all = await getFeeds(ids);
+    if (all.status === 200) {
+      return { at: Date.now(), feeds: all.feeds.length ? all.feeds : null, reason: all.feeds.length ? null : 'empty' };
+    }
+    if (all.status === 401 || all.status === 403) {
+      // A key is often entitled to only some feeds, and one forbidden id fails the whole batch.
+      // Ask per feed and keep whatever the key is allowed to read; the rest stay "last known".
+      const each = await Promise.allSettled(ids.map((id) => getFeeds([id])));
+      const feeds = each.flatMap((r) => (r.status === 'fulfilled' && r.value.status === 200 ? r.value.feeds : []));
+      if (feeds.length) return { at: Date.now(), feeds, reason: null };
       return { at: Date.now(), feeds: null, reason: API_KEY ? 'unauthorized' : 'no-key' };
     }
-    if (!res.ok) return { at: Date.now(), feeds: null, reason: 'error' };
-    const body = (await res.json()) as { parsed?: HermesParsedFeed[] };
-    const feeds = Array.isArray(body.parsed) ? body.parsed : [];
-    return { at: Date.now(), feeds: feeds.length ? feeds : null, reason: feeds.length ? null : 'empty' };
+    return { at: Date.now(), feeds: null, reason: 'error' };
   } catch (e) {
     const timeout = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
     return { at: Date.now(), feeds: null, reason: timeout ? 'timeout' : 'error' };

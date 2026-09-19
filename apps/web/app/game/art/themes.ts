@@ -124,7 +124,7 @@ export const THEMES: Record<RouteTheme, ThemePal> = {
   crypto: {
     id: 'crypto', label: 'Ledger violet',
     grass: { base: h('#5c4c9c'), hi: h('#7c6ac2'), lo: h('#44367c'), tuft: h('#f0c040') },
-    tall: { base: h('#3a2a78'), mid: h('#5a48a8'), tip: h('#b494ff'), lo: h('#241a58') },
+    tall: { base: h('#2c1f66'), mid: h('#5c48b0'), tip: h('#c8a8ff'), lo: h('#1a1244') },
     sand: { base: h('#e0c890'), hi: h('#f4e2b0'), lo: h('#b89c60') },
     path: { style: 'plate', base: h('#d8b04a'), hi: h('#f6da7c'), lo: h('#aa862c'), mortar: h('#7a5a1c'), edge: h('#4a3410') },
     water: { base: h('#4a58c8'), hi: h('#8c9aff'), lo: h('#3242a2'), deep: h('#212c7a'), foam: h('#e4e8ff'), edge: h('#161e58') },

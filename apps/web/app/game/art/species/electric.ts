@@ -1,7 +1,4 @@
-import { CX, K, W, hex, makeRamp, mix, lighten, darken, type MonCtx } from '../monkit';
-
-const mirror = (pts: ReadonlyArray<readonly [number, number]>, axis: number) =>
-  pts.map(([x, y]) => [2 * axis - x, y] as const);
+import { CX, K, W, hex, makeRamp, mix, type MonCtx } from '../monkit';
 
 /** TSLA / Teslaq: angular cyber-cat with a lightning-bolt tail, static cheek tufts and a red visor stripe. */
 export function tsla(c: MonCtx) {
@@ -70,7 +67,7 @@ export function tsla(c: MonCtx) {
 
 /** NVDA / Nvidra: armoured hydra-lizard with a glowing green eye-visor and a GPU-fan chest. */
 export function nvda(c: MonCtx) {
-  const { p, g, A, B, front } = c;
+  const { p, g, A, front } = c;
   const glow = hex('#eaffb0');
   const neon = hex('#9aff3c');
   const metal = makeRamp('#6b8552');
@@ -129,5 +126,4 @@ export function nvda(c: MonCtx) {
     g.hline(10, 12, 12, helm.deep);
     g.hline(11, 14, 10, helm.deep);
   }
-  void darken;
 }

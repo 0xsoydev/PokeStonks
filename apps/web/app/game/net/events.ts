@@ -30,12 +30,12 @@ export interface GameEvents {
 type Handler<T> = (payload: T) => void;
 
 class Bus {
-  private map = new Map<string, Set<Handler<any>>>();
+  private map = new Map<string, Set<Handler<never>>>();
 
   on<K extends keyof GameEvents>(event: K, fn: Handler<GameEvents[K]>): () => void {
     let set = this.map.get(event as string);
     if (!set) this.map.set(event as string, (set = new Set()));
-    set.add(fn);
+    set.add(fn as Handler<never>);
     return () => this.off(event, fn);
   }
 
@@ -45,12 +45,12 @@ class Bus {
   }
 
   off<K extends keyof GameEvents>(event: K, fn: Handler<GameEvents[K]>): void {
-    this.map.get(event as string)?.delete(fn);
+    this.map.get(event as string)?.delete(fn as Handler<never>);
   }
 
   emit<K extends keyof GameEvents>(event: K, ...args: GameEvents[K] extends void ? [] : [GameEvents[K]]): void {
     this.map.get(event as string)?.forEach((fn) => {
-      try { fn(args[0]); } catch (e) { console.error(`[EventBus] handler for ${String(event)} threw`, e); }
+      try { (fn as Handler<unknown>)(args[0]); } catch (e) { console.error(`[EventBus] handler for ${String(event)} threw`, e); }
     });
   }
 }

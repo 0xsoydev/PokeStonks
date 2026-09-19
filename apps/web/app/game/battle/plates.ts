@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import type { StatKey } from 'game-core';
 import { audio } from '../audio';
-import { C, FONT, TYPE_COLOR, drawFrame, hex, hpColor, txt } from './ui';
+import { C, TYPE_COLOR, drawFrame, hex, hpColor, txt } from './ui';
 import type { MonView } from '../net/session';
 
 const STAT_SHORT: Record<StatKey, string> = { atk: 'ATK', def: 'DEF', spa: 'SPA', spd: 'SPD', spe: 'SPE' };

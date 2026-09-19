@@ -49,6 +49,12 @@ E2E_RPC=http://127.0.0.1:8546 ARENA_ADDRESS=0x… CLAIM_SIGNER_PRIVATE_KEY=0x…
   pnpm --filter server exec tsx scripts/e2e-claim.mts
 ```
 
+### Live prices (Pyth)
+
+Since 2026-08-26 Pyth's Hermes price API needs a free API key ([get one](https://docs.pyth.network/price-feeds/pro/acquire-api-key)). Put it in `apps/server/.env` and `apps/web/.env.local` as `PYTH_API_KEY=...`. Keys can be entitled to only some equity feeds; a ticker the key can't read simply stays "last known / flat" while the rest stay live. Without a key the game is fully playable and every mood is flat.
+
+Dev-only pages (`/dev/art`, `/dev/audio`, `/dev/battle`) are hidden in production; set `NEXT_PUBLIC_DEV_PAGES=1` to expose them.
+
 ## Deploy the contracts (Monad testnet)
 
 1. Get testnet MON from the faucet: https://faucet.monad.xyz
@@ -59,7 +65,7 @@ The script checks chain and balance, runs the tests, deploys 12 synthetic tokens
 
 ## Deploy the app
 
-- **Web → Vercel.** Project root `apps/web` (enable "include files outside the root directory"). Set `NEXT_PUBLIC_COLYSEUS_URL=wss://<your-server>`, `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_RPC_URL`.
+- **Web → Vercel.** Project root `apps/web` (enable "include files outside the root directory"). Set `NEXT_PUBLIC_COLYSEUS_URL=wss://<your-server>`, `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_RPC_URL`, and the server-side `PYTH_API_KEY`. If you use Privy, add your Vercel domain to its allowed origins.
 - **Server → any always-on host** (Render, Fly, Railway). Vercel cannot host the websocket server. `render.yaml` and `apps/server/Dockerfile` are provided. Set `ALLOWED_ORIGINS` to your Vercel URL and the secrets `CLAIM_SIGNER_PRIVATE_KEY` / `RELAYER_PRIVATE_KEY` in the host's dashboard.
 
 ## Security notes

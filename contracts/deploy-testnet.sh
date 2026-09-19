@@ -36,14 +36,18 @@ echo "✓ BattleArena: $ARENA"
 SERVER_ENV="../apps/server/.env"
 SIGNER_KEY="${SERVER_SIGNER_KEY:-$PRIVATE_KEY}"
 umask 077
+# Keep a Pyth API key you already added (Hermes needs one; free at https://docs.pyth.network/price-feeds/pro/acquire-api-key).
+KEEP_PYTH="$(grep -E '^PYTH_API_KEY=' "$SERVER_ENV" 2>/dev/null || true)"
 cat > "$SERVER_ENV" <<ENVEOF
 ARENA_ADDRESS=$ARENA
 CLAIM_SIGNER_PRIVATE_KEY=$SIGNER_KEY
 RELAYER_PRIVATE_KEY=$PRIVATE_KEY
 RPC_URL=$RPC
 ENVEOF
+[ -n "$KEEP_PYTH" ] && echo "$KEEP_PYTH" >> "$SERVER_ENV"
 echo "✓ wrote apps/server/.env (gitignored). Rewards are now ON for the local server."
 echo
 echo "Explorer: https://testnet.monadvision.com/address/$ARENA"
+[ -z "$KEEP_PYTH" ] && echo "TIP : add PYTH_API_KEY=<your key> to apps/server/.env to turn on live stock moods."
 echo "NOTE: the voucher signer must equal the key that signs on the server. If you set VOUCHER_SIGNER"
 echo "      in .env, export SERVER_SIGNER_KEY=<that key> before running this script."

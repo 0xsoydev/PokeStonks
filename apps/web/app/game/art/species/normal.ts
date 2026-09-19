@@ -72,8 +72,15 @@ export function msft(c: MonCtx) {
   sym((s) => p.blob(CX + s * 9.6, 22.2, 2.5, 3, A, { rot: s * -0.3 }));
   p.blob(CX, 22.4, 9.4, 7.4, A);
   if (front) p.blob(CX, 23.8, 5.6, 5, belly, { edge: false, clean: true, bias: 0.05 });
+  // dino tail plates
+  if (front) for (const [x, y, r] of [[24.4, 23.4, 0], [27.2, 21, 0.4], [29.4, 18, 0.8]] as const) p.facet([[x - 1.6, y + 1], [x + 0.4 - r, y - 2.6], [x + 1.6, y + 1]], B, 0.5);
   // head
   p.blob(CX, 13.6, 9.6, 7.4, A);
+  // saurian snout with nostrils and teeth
+  if (front) {
+    p.blob(CX, 16.4, 5.2, 3.2, belly, { edge: false, clean: true });
+    g.set(14, 15, B.deep); g.set(18, 15, B.deep);
+  }
 
   // window crest: four panes in a navy frame
   const R = hex('#ef4a3a'), G = hex('#5fc44a'), Bl = hex('#3d9df0'), Y = hex('#ffc933');
@@ -94,7 +101,8 @@ export function msft(c: MonCtx) {
     // brows: calm and sturdy
     g.hline(10, 11, 4, B.deep); g.hline(18, 11, 4, B.deep);
     g.set(15, 15, B.deep); g.set(17, 15, B.deep);
-    g.hline(13, 17, 6, K); g.set(12, 16, K); g.set(19, 16, K);
+    g.hline(13, 18, 6, K); g.set(12, 17, K); g.set(19, 17, K);
+    g.set(14, 19, W); g.set(17, 19, W);
   } else {
     // dorsal plates down the back
     for (let i = 0; i < 3; i++) {

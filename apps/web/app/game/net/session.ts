@@ -7,6 +7,25 @@ import {
 
 export type ConnState = 'online' | 'reconnecting' | 'closed';
 
+/** The synced room state as the SDK decodes it (schema instances). Only what we read is described. */
+interface SchemaMon {
+  speciesId: string; name: string; affinity: string; level: number; hp: number; maxHp: number;
+  atk: number; def: number; spa: number; spd: number; spe: number;
+  atkStage: number; defStage: number; spaStage: number; spdStage: number; speStage: number;
+  moves: Iterable<string>;
+  pp?: { forEach(cb: (v: number, id: string) => void): void };
+}
+interface SchemaPlayer {
+  sessionId: string; wallet: string; ticker: string; isBot: boolean; connected: boolean; locked: boolean;
+  active: SchemaMon;
+}
+interface SchemaState {
+  phase: Snapshot['phase']; mode: string; turnNo: number; turnMs: number; waitMs: number; winner: string;
+  moodA: number; moodB: number;
+  players?: { forEach(cb: (p: SchemaPlayer, k: string) => void): void };
+}
+type BattleRoomHandle = Room<unknown, SchemaState>;
+
 export interface MonView {
   speciesId: string; name: string; affinity: string; level: number;
   hp: number; maxHp: number;
@@ -65,7 +84,7 @@ export class BattleSession {
   private listeners = { turn: new Set<Listener<void>>(), end: new Set<Listener<BattleEnd>>(), claim: new Set<Listener<ClaimStatus>>(), conn: new Set<Listener<ConnState>>(), rejected: new Set<Listener<string>>() };
   private closed = false;
 
-  private constructor(readonly client: Client, readonly room: Room<any, any>) {
+  private constructor(readonly client: Client, readonly room: BattleRoomHandle) {
     room.onStateChange(() => { this.dirty = true; });
     room.onMessage(MSG.turnResolved, (m: TurnResolved) => {
       if (this.seenTurns.has(m.turnNo)) return; // idempotent on replay
@@ -84,7 +103,7 @@ export class BattleSession {
     room.onError(() => { /* surfaced through onLeave */ });
   }
 
-  private static async connect(make: (c: Client) => Promise<Room<any, any>>): Promise<BattleSession> {
+  private static async connect(make: (c: Client) => Promise<BattleRoomHandle>): Promise<BattleSession> {
     const client = new Client(colyseusUrl());
     let last: unknown;
     for (let i = 0; i < 3; i++) {
@@ -93,11 +112,11 @@ export class BattleSession {
         // The first state patch can land a tick after the join resolves.
         if (!room.state) await new Promise<void>((res) => room.onStateChange.once(() => res()));
         return new BattleSession(client, room);
-      } catch (e: any) {
+      } catch (e) {
         last = e;
-        const code = e?.code;
+        const code = (e as { code?: number } | undefined)?.code;
         // Out-of-date client / bad options / unknown duel code: retrying can't help.
-        if (code === 4426 || code === 4400 || code === 4404 || /not found/i.test(e?.message ?? '')) break;
+        if (code === 4426 || code === 4400 || code === 4404 || /not found/i.test((e as Error | undefined)?.message ?? '')) break;
         await sleep(500 * (i + 1));
       }
     }
@@ -136,16 +155,16 @@ export class BattleSession {
     if (!st) return null;
     if (!this.dirty && this.cache) return this.cache;
     const players: Snapshot['players'] = {};
-    st.players?.forEach((p: any, k: string) => {
+    st.players?.forEach((p, k) => {
       const m = p.active;
       const pp: Record<string, number> = {};
-      m.pp?.forEach((v: number, id: string) => { pp[id] = v; });
+      m.pp?.forEach((v, id) => { pp[id] = v; });
       players[k as SeatKey] = {
         sessionId: p.sessionId, wallet: p.wallet, ticker: p.ticker, isBot: p.isBot, connected: p.connected, locked: p.locked,
         mon: {
           speciesId: m.speciesId, name: m.name, affinity: m.affinity, level: m.level, hp: m.hp, maxHp: m.maxHp,
           atk: m.atk, def: m.def, spa: m.spa, spd: m.spd, spe: m.spe,
-          moves: Array.from(m.moves as Iterable<string>),
+          moves: Array.from(m.moves),
           pp,
           stages: { atk: m.atkStage, def: m.defStage, spa: m.spaStage, spd: m.spdStage, spe: m.speStage },
         },

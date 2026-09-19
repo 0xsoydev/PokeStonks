@@ -10,7 +10,7 @@ import { MonPlate } from '../battle/plates';
 import { EndOverlay } from '../battle/end';
 import { playTurn, resetStages } from '../battle/turns';
 import type { Combatant } from '../battle/types';
-import { C, H, W, TYPE_COLOR, delay, drawFrame, hex, isTouch, tweenP, txt } from '../battle/ui';
+import { C, H, W, delay, drawFrame, isTouch, tweenP, txt } from '../battle/ui';
 
 export interface BattleInit {
   session: BattleSession;

@@ -15,7 +15,7 @@ export const COVER_DEPTH = 10_000;
 export type CutsceneKind = 'wild' | 'trainer';
 
 const FONT = '"Press Start 2P"';
-const NAVY = 0x183088, GOLD = 0xd8a830, INK = 0x181818;
+const NAVY = 0x183088, GOLD = 0xd8a830;
 
 class Cut {
   objs: Phaser.GameObjects.GameObject[] = [];
@@ -106,6 +106,11 @@ export async function playEncounterIntro(scene: Phaser.Scene, opts: { kind: Cuts
   const { w, h } = viewSize(scene);
   const accent = opts.kind === 'trainer' ? GOLD : 0xffffff;
 
+  // The overworld plays the encounter sting itself the moment a grass/trainer trigger fires (and stamps
+  // the registry); anything else that starts an encounter (a friend duel) gets it from here.
+  const stamped = scene.registry.get('encounterSfxAt') as number | undefined;
+  if (!stamped || Date.now() - stamped > 2500) audio.sfx('encounter');
+
   // 1) classic triple flash
   const flash = cut.own(scene.add.rectangle(w / 2, h / 2, w + 8, h + 8, 0xffffff, 0)).setScrollFactor(0).setDepth(COVER_DEPTH - 1);
   for (let i = 0; i < 3; i++) {
@@ -146,7 +151,6 @@ export async function playEncounterIntro(scene: Phaser.Scene, opts: { kind: Cuts
     }
   };
   const driver = { t: 0 };
-  audio.sfx('encounter');
   await cut.tween({ targets: driver, t: 1, duration: 620, ease: 'Sine.easeIn', onUpdate: () => draw(driver.t) });
   if (cut.dead) return;
   ensureCover(cut);
@@ -278,8 +282,7 @@ export async function playVersus(
     if ((o as Phaser.GameObjects.Image).texture?.key === 'shadow_blob') continue;
     void cut.tween({ targets: o, y: '-=6', duration: 380, yoyo: true, repeat: 1, ease: 'Sine.easeInOut' });
   }
-  await cut.wait(760);
-  void INK;
+  await cut.wait(620);
 }
 
 /** Destroy every cover/object created by the functions above. Safe to call any time. */

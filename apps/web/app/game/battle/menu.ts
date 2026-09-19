@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { type Affinity, type Move, getMove, typeMult } from 'game-core';
 import { audio } from '../audio';
-import { C, FONT, TYPE_COLOR, drawFrame, hex, notched, txt } from './ui';
+import { C, TYPE_COLOR, drawFrame, txt } from './ui';
 
 export interface MenuItem { id: string; label: string; color: number; dark: number; text?: string }
 

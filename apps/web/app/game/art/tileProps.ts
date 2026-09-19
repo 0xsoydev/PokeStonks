@@ -549,7 +549,7 @@ export function paintCarpet(g: PixelGrid, th: ThemePal, part: 'm' | 'l' | 'r') {
   const c = th.carpet;
   const x0 = part === 'l' ? 2 : 0, x1 = part === 'r' ? 14 : 16;
   for (let y = 0; y < T; y++) for (let x = x0; x < x1; x++) {
-    let col = ((x + y) & 1) === 0 && hash2(x, y, 2) < 0.2 ? c.sh : c.mid;
+    const col = ((x + y) & 1) === 0 && hash2(x, y, 2) < 0.2 ? c.sh : c.mid;
     g.set(x, y, col);
   }
   if (part === 'l') { g.vline(2, 0, 16, c.hi); g.vline(3, 0, 16, c.deep); }

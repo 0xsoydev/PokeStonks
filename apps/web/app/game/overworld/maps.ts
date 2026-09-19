@@ -352,10 +352,6 @@ export function buildRouteMap(theme: RouteTheme, seed: number | string, opts: Ro
   fenceRow(34, 40, 8, 37);
 
   // --- theme props & signs (placed before scatter so they get priority)
-  const single = (x: number, y: number, t: number, over?: number) => {
-    if (over !== undefined) b.setOver(x, y - 1, over);
-    b.setDecor(x, y, t);
-  };
   const tryTall = (x: number, y: number, top: number, bottom: number) => {
     if (b.inb(x, y - 1) && b.isFree(x, y) && (b.isFree(x, y - 1) || b.occ[b.i(x, y - 1)] === KEEP)) {
       b.setOver(x, y - 1, top); b.collide[b.i(x, y - 1)] = 1; b.occ[b.i(x, y - 1)] = BLOCK; b.setDecor(x, y, bottom);
@@ -427,8 +423,6 @@ export function buildRouteMap(theme: RouteTheme, seed: number | string, opts: Ro
     if (x < CX - 2 || x > CX + 1) b.plantTree(x, h - 2, ((x >> 1) + 1) & 1);
   }
   for (let y = 2; y < h - 2; y += 2) { b.plantTree(0, y, (y >> 1) & 1); b.plantTree(w - 2, y, ((y >> 1) + 1) & 1); }
-  // gate posts
-  for (const x of [CX - 2, CX + 2]) if (b.isFree(x, h - 2) || true) { b.occ[b.i(x, h - 2)] = FREE; }
 
   // --- scattered trees (ragged inner border + groves), never touching paths/patches
   scatter(70, (x, y) => {
@@ -510,7 +504,7 @@ export function buildRouteMap(theme: RouteTheme, seed: number | string, opts: Ro
 export const INTERIOR_W = 12;
 export const INTERIOR_H = 9;
 
-export function buildExchangeInterior(theme: RouteTheme, routeName = 'Route'): BuiltMap {
+export function buildExchangeInterior(theme: RouteTheme = 'bluechip', routeName = 'Route'): BuiltMap {
   const w = INTERIOR_W, h = INTERIOR_H;
   const b = new Builder(w, h);
   const flavour = FLAVOUR[theme];

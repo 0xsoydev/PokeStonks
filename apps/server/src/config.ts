@@ -3,23 +3,27 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
+/** Hosts and .env files often define blank vars; treat them as unset rather than invalid. */
+const blankIsUnset = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+const opt = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blankIsUnset, schema.optional());
+
 const hex32 = z.string().regex(/^(0x)?[0-9a-fA-F]{64}$/);
 const addr = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 
 const Env = z.object({
   PORT: z.coerce.number().int().default(2567),
-  ALLOWED_ORIGINS: z.string().optional(),
+  ALLOWED_ORIGINS: opt(z.string()),
   RPC_URL: z.string().url().default('https://testnet-rpc.monad.xyz'),
   CHAIN_ID: z.coerce.number().int().default(10143),
   /** Since 2026-08-26 Hermes requires a (free) Pyth API key: https://docs.pyth.network/price-feeds/pro/acquire-api-key */
-  PYTH_API_KEY: z.string().min(8).optional(),
-  HERMES_URL: z.string().url().optional(),
+  PYTH_API_KEY: opt(z.string().min(8)),
+  HERMES_URL: opt(z.string().url()),
   PYTH_ADDRESS: addr.default('0x2880aB155794e7179c9eE2e38200202908C17B43'),
-  ARENA_ADDRESS: addr.optional(),
-  CLAIM_SIGNER_PRIVATE_KEY: hex32.optional(),
-  RELAYER_PRIVATE_KEY: hex32.optional(),
+  ARENA_ADDRESS: opt(addr),
+  CLAIM_SIGNER_PRIVATE_KEY: opt(hex32),
+  RELAYER_PRIVATE_KEY: opt(hex32),
   /** Test/ops override for the queue → bot timeout. */
-  QUEUE_BOT_MS: z.coerce.number().int().min(0).optional(),
+  QUEUE_BOT_MS: opt(z.coerce.number().int().min(0)),
   REWARD_HUMAN_WEI: z.string().regex(/^\d+$/).default('100000000000000000'), // 0.10 sSTOCK
   REWARD_BOT_WEI: z.string().regex(/^\d+$/).default('20000000000000000'),    // 0.02 sSTOCK
   MAX_CLAIMS_PER_HOUR: z.coerce.number().int().default(12),

@@ -1,8 +1,5 @@
 import { CX, K, W, BIG_EYE, DOT_EYE, eyeLegend, hex, makeRamp, mix, lighten, dropShape, type MonCtx } from '../monkit';
 
-const mirror = (pts: ReadonlyArray<readonly [number, number]>, axis: number) =>
-  pts.map(([x, y]) => [2 * axis - x, y] as const);
-
 /** AMZN / Amazoo: chubby orange otter-seal with a smile-arrow belly and a droplet crest. */
 export function amzn(c: MonCtx) {
   const { p, g, A, B, front } = c;

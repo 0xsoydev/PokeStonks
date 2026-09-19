@@ -22,7 +22,7 @@ let engine: Engine | null = null;
 let failed = false;
 let unlocked = false;
 let hidden = false;
-let state: Persisted = loadState();
+const state: Persisted = loadState();
 const changeListeners = new Set<() => void>();
 const unlockListeners = new Set<() => void>();
 let listenersAttached = false;

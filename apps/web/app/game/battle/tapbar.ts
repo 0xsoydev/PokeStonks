@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import type { TapCategory } from 'game-core';
 import { audio } from '../audio';
-import { C, H, W, drawFrame, hex, txt } from './ui';
+import { C, H, W, drawFrame, txt } from './ui';
 
 /** Zone boundaries as fractions of the bar (left→right). */
 const ZONES: { from: number; to: number; color: number; label: string }[] = [

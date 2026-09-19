@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type Phaser from 'phaser';
 
 interface PhaserMountProps {
@@ -19,7 +19,17 @@ export default function PhaserMount({ marketId, speciesId, wallet, onExit }: Pha
   const host = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const exitRef = useRef(onExit);
-  exitRef.current = onExit;
+  useEffect(() => { exitRef.current = onExit; });
+  const [rotateHint, setRotateHint] = useState(false);
+
+  // The game is 3:2 landscape; on a portrait phone it letterboxes to a small strip, so suggest rotating.
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+    const update = () => setRotateHint(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     if (!host.current || gameRef.current) return;
@@ -63,6 +73,8 @@ export default function PhaserMount({ marketId, speciesId, wallet, onExit }: Pha
         },
       });
       gameRef.current = game;
+      // Dev-only handle for QA scripts and console debugging; stripped from production builds.
+      if (process.env.NODE_ENV !== 'production') (window as unknown as { __game?: unknown }).__game = game;
     })();
 
     return () => {
@@ -72,5 +84,21 @@ export default function PhaserMount({ marketId, speciesId, wallet, onExit }: Pha
     };
   }, [marketId, speciesId, wallet]);
 
-  return <div ref={host} style={{ position: 'absolute', inset: 0, zIndex: 50, background: '#0b1030', touchAction: 'none' }} />;
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: '#0b1030', touchAction: 'none' }}>
+      <div ref={host} style={{ position: 'absolute', inset: 0 }} />
+      {rotateHint && (
+        <p
+          role="status"
+          style={{
+            position: 'absolute', left: 8, right: 8, bottom: 'max(12px, env(safe-area-inset-bottom))', margin: 0, zIndex: 2,
+            padding: '10px 12px', textAlign: 'center', pointerEvents: 'none',
+            background: '#183088', color: '#f8f8d0', border: '3px solid #d8a830', fontSize: 15, lineHeight: 1.3,
+          }}
+        >
+          Rotate your phone for a bigger view.
+        </p>
+      )}
+    </div>
+  );
 }

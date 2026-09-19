@@ -32,7 +32,7 @@ export class Controls {
   private dpadShown = true;
   private btnShown = true;
   private pressedGfx: { up: Phaser.GameObjects.Graphics; down: Phaser.GameObjects.Graphics; left: Phaser.GameObjects.Graphics; right: Phaser.GameObjects.Graphics; a: Phaser.GameObjects.Graphics; b: Phaser.GameObjects.Graphics } | null = null;
-  private tapAnywhere: ((p: Phaser.Input.Pointer) => void) | null = null;
+  private tapAnywhere: ((p: Phaser.Input.Pointer, over: unknown[]) => void) | null = null;
   /** Set by the scene: pointer taps elsewhere act like confirm on non-touch devices. */
   tapConfirm = false;
 
@@ -40,7 +40,8 @@ export class Controls {
     this.touch = isCoarsePointer();
     const kb = scene.input.keyboard;
     if (kb) {
-      const k = (n: string) => kb.addKey(n, true);
+      // no Phaser-level key capture: it would swallow typing in the React HUD's inputs (see onKeyDown)
+      const k = (n: string) => kb.addKey(n, false);
       this.keys = {
         up: k('UP'), down: k('DOWN'), left: k('LEFT'), right: k('RIGHT'), w: k('W'), a: k('A'), s: k('S'), d: k('D'),
         shift: k('SHIFT'), z: k('Z'), x: k('X'), space: k('SPACE'), enter: k('ENTER'), esc: k('ESC'),
@@ -50,13 +51,31 @@ export class Controls {
         [this.keys.left, 'left'], [this.keys.a, 'left'], [this.keys.right, 'right'], [this.keys.d, 'right'],
       ];
     }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', this.onKeyDown);
+    }
     if (this.touch) {
       scene.input.addPointer(3);
       this.buildTouch();
     } else {
-      this.tapAnywhere = () => { this.tapConfirm = true; };
+      // taps that land on an interactive object (e.g. a dialog choice) are that object's business
+      this.tapAnywhere = (_p: Phaser.Input.Pointer, over: unknown[]) => { if (!over || over.length === 0) this.tapConfirm = true; };
       scene.input.on('pointerdown', this.tapAnywhere);
     }
+  }
+
+  /** Stop arrows/space from scrolling the page, but never while the player is typing in an HTML field. */
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (Controls.htmlFieldFocused()) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ') e.preventDefault();
+  };
+
+  private static htmlFieldFocused(): boolean {
+    if (typeof document === 'undefined') return false;
+    const a = document.activeElement as HTMLElement | null;
+    if (!a) return false;
+    const t = a.tagName;
+    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || a.isContentEditable;
   }
 
   private buildTouch() {
@@ -116,7 +135,8 @@ export class Controls {
   /** Read hardware once per frame into `state`. No allocation. */
   poll(): InputState {
     const st = this.state;
-    const k = this.keys;
+    // while an HTML input (duel code, wallet field...) has focus the game must not walk around
+    const k = Controls.htmlFieldFocused() ? null : this.keys;
     let dir: Dir | null = null;
     let run = false, confirmDown = false, cancelDown = false, menuDown = false, upDown = false, downDown = false;
     if (k) {
@@ -173,6 +193,7 @@ export class Controls {
   }
 
   destroy() {
+    if (typeof window !== 'undefined') window.removeEventListener('keydown', this.onKeyDown);
     if (this.tapAnywhere) this.scene.input.off('pointerdown', this.tapAnywhere);
     this.dpadBase?.destroy(); this.btnBase?.destroy();
     for (const t of this.labels) t.destroy();

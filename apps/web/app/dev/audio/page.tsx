@@ -47,6 +47,7 @@ export default function AudioDevPage() {
   const seqTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- dev bench: render persisted volumes only after mount
     setMounted(true);
     const sync = () => {
       const np = getNowPlaying();

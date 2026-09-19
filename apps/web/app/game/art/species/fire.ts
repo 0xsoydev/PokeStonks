@@ -1,4 +1,4 @@
-import { CX, K, W, DOT_EYE, eyeLegend, hex, makeRamp, mix, lighten, darken, flameShape, type MonCtx } from '../monkit';
+import { CX, K, W, DOT_EYE, eyeLegend, hex, makeRamp, mix, flameShape, type MonCtx } from '../monkit';
 
 /** GME / Gamestomp: stompy red bull-lizard with a controller-shaped flame crest. */
 export function gme(c: MonCtx) {
@@ -76,7 +76,7 @@ export function gme(c: MonCtx) {
 
 /** AMD / Amdrake: dark-winged orange drake with chip-pin spikes and a CPU-die chest. */
 export function amd(c: MonCtx) {
-  const { p, g, A, B, front } = c;
+  const { p, g, A, front } = c;
   const wing = makeRamp('#2b2f3a');
   const belly = makeRamp(mix(A.hi, hex('#ffe9a8'), 0.55));
   const pin = hex('#c9d0dc');

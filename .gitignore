@@ -42,3 +42,9 @@ apps/server/data/
 contracts/.env
 apps/server/.env
 *.key
+
+# Generated in the web app
+apps/web/public/maplibre/
+apps/web/AGENTS.md
+apps/web/CLAUDE.md
+next-env.d.ts

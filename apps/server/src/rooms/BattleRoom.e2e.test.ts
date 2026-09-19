@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 // Config is read at import time, so set the environment first, then import dynamically.
+// Hermetic: a developer's local .env (rewards on, real keys) must never change these outcomes.
+for (const k of ['ARENA_ADDRESS', 'CLAIM_SIGNER_PRIVATE_KEY', 'RELAYER_PRIVATE_KEY', 'PYTH_API_KEY', 'ALLOWED_ORIGINS']) process.env[k] = '';
 process.env.FAST_TIMING = '1';
 process.env.QUEUE_BOT_MS = '400';
 process.env.RECONNECT_SECONDS = '2';

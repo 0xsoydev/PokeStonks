@@ -1,5 +1,5 @@
 import { getSpecies, isSpeciesId } from 'game-core';
-import { PixelGrid, hex, makeRamp } from './pixel';
+import { PixelGrid, makeRamp } from './pixel';
 import { Painter } from './paint';
 import { MON, type Facing, type MonCtx, type MonPainter } from './monkit';
 import { aapl, msft } from './species/normal';
@@ -47,7 +47,14 @@ function fallback(c: MonCtx) {
  * and upscaled with nearest-neighbour, so `size` should be a multiple of 32 (default 128 = x4).
  */
 export function drawMon(ctx: CanvasRenderingContext2D, speciesId: string, facing: Facing, size = 128): void {
-  renderMonGrid(speciesId, facing).drawTo(ctx, 0, 0, size / MON);
+  const key = `${isSpeciesId(speciesId) ? speciesId : 'aapl'}:${facing}`;
+  let src = canvasCache.get(key);
+  if (!src) { src = renderMonGrid(speciesId, facing).toCanvas(1); canvasCache.set(key, src); }
+  const prev = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(src, 0, 0, size, size);
+  ctx.imageSmoothingEnabled = prev;
 }
 
-void hex;
+const canvasCache = new Map<string, HTMLCanvasElement>();
+

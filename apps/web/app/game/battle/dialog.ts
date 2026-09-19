@@ -20,6 +20,7 @@ export class DialogBox {
   private hold?: Phaser.Time.TimerEvent;
   private resolve?: () => void;
   private blipEvery = 0;
+  private opts: { wait?: boolean; holdMs?: number } = {};
 
   constructor(private scene: Phaser.Scene) {
     this.g = scene.add.graphics().setDepth(40);
@@ -51,6 +52,7 @@ export class DialogBox {
       this.text.setText('');
       this.arrow.setVisible(false);
       this.state = 'typing';
+      this.opts = opts;
       let i = 0;
       const perTick = 1;
       this.timer = this.scene.time.addEvent({
@@ -62,11 +64,10 @@ export class DialogBox {
           if (i >= this.full.length) this.finishTyping(opts);
         },
       });
-      (this as any)._opts = opts;
     });
   }
 
-  private finishTyping(opts: { wait?: boolean; holdMs?: number } = (this as any)._opts ?? {}) {
+  private finishTyping(opts: { wait?: boolean; holdMs?: number } = this.opts) {
     this.timer?.remove(); this.timer = undefined;
     this.text.setText(this.full);
     if (opts.wait) {

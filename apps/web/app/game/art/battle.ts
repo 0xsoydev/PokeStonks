@@ -236,7 +236,6 @@ const PLATFORM_LOGICAL: Record<PlatformKind, [number, number]> = { foe: [65, 22]
 export function drawPlatformGrid(kind: PlatformKind, theme: RouteTheme = 'bluechip'): PixelGrid {
   const [w, h] = PLATFORM_LOGICAL[kind];
   const g = new PixelGrid(w, h);
-  const spec = SPECS[theme];
   const th = getTheme(theme);
   const TOPS: Record<RouteTheme, string> = {
     bluechip: '#62bc52', tech: '#5c7cae', energy: '#d8ae70', meme: '#8452c0', consumer: '#f0e8d2', crypto: '#8a6cd8',
