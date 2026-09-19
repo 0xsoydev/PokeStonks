@@ -14,7 +14,7 @@ export const TIMING = {
   QUEUE_BOT_MS: 20_000,
   /** Both clients must send `ready`; the server starts anyway after this. */
   READY_TIMEOUT_MS: 8_000,
-  INTRO_MS: 2_500,
+  INTRO_MS: 4_600,
   TURN_MS: 30_000,
   PRACTICE_TURN_MS: 45_000,
   RECONNECT_S: 30,
