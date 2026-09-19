@@ -293,19 +293,19 @@ export default function Battle({ symbol, drop, playerName, playerId, onDone }: B
           The overflow-hidden wrapper clips the faint drop at the pavement line. */}
       <div className="absolute right-[6%] top-[4%] flex flex-col items-center">
         {infoBox(opp.name, oHP)}
-        <div className="mt-3 flex items-end justify-center overflow-hidden" style={{ height: '28vh' }}>
-          {sprite(oppGif, 'o', 'max-h-full object-contain')}
+        <div className="mt-3 flex items-end justify-center overflow-hidden" style={{ height: '34vh' }}>
+          {sprite(oppGif, 'o', 'h-full w-auto object-contain')}
         </div>
-        <Pavement width={260} />
+        <Pavement width={320} />
       </div>
 
       {/* player column (left): HP box above sprite, standing on pavement */}
       <div className="absolute bottom-[24%] left-[6%] flex flex-col items-center">
         {infoBox(playerName.toUpperCase(), pHP)}
-        <div className="mt-3 flex items-end justify-center overflow-hidden" style={{ height: '30vh' }}>
-          {sprite(playerGif, 'p', 'max-h-full object-contain')}
+        <div className="mt-3 flex items-end justify-center overflow-hidden" style={{ height: '36vh' }}>
+          {sprite(playerGif, 'p', 'h-full w-auto object-contain')}
         </div>
-        <Pavement width={300} />
+        <Pavement width={360} />
       </div>
 
       {/* textbox + menu */}
