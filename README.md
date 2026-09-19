@@ -38,6 +38,17 @@ pnpm test                # game-core (50) + server (24, including real-websocket
 pnpm test:contracts      # forge test (needs Foundry)
 ```
 
+### Test the reward path without spending anything
+
+`apps/server/scripts/e2e-claim.mts` plays a real two-client battle and claims the reward on-chain. Run it against a local fork of Monad testnet (which includes the real Pyth contract):
+
+```bash
+anvil --fork-url https://testnet-rpc.monad.xyz --port 8546
+# deploy with throwaway keys, then:
+E2E_RPC=http://127.0.0.1:8546 ARENA_ADDRESS=0x… CLAIM_SIGNER_PRIVATE_KEY=0x… RELAYER_PRIVATE_KEY=0x… \
+  pnpm --filter server exec tsx scripts/e2e-claim.mts
+```
+
 ## Deploy the contracts (Monad testnet)
 
 1. Get testnet MON from the faucet: https://faucet.monad.xyz
