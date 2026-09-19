@@ -6,11 +6,7 @@ settings:
 
 importers:
 
-  .: {}
-
-  apps/server: {}
-
-  apps/web:
+  .:
     dependencies:
       '@types/three':
         specifier: ^0.186.0
@@ -58,10 +54,6 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
-
-  packages/contracts-abi: {}
-
-  packages/game-core: {}
 
 packages:
 
