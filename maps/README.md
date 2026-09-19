@@ -1,52 +1,59 @@
 # PokeStonks — Village Map (`maps` branch)
 
-One playable pixel-art village map built from the CraftPix
-"Free Village Pixel Tileset for Top-Down Defense"
-(see `assets/village-tileset/License.txt` — free for use in games).
+**Current: Pokémon-style Meadowbrook Village** (from `demo.html` reference engine + `meadowbrook.tmj`).
 
 Preview: `pnpm dev` → http://localhost:3000/maps
 
-## Layout
+## Controls
+
+- Arrow keys — walk (grid-step, GBA style)
+- Shift (hold) — run
+- Z / Enter / Space — read signs & mailboxes, catch poké balls
+- Click ground — click-to-move
+- C — collision debug overlay
+
+## How it works
 
 ```
 maps/
-  assets/village-tileset/   # canonical PNGs (tiles, tiles2, objects, animated) + License
-  data/village-map.json     # generated: 40x30 grid, objects, 5 stock pins, spawn
-  scripts/generate-map.mjs  # regenerates the JSON (seeded, deterministic)
-  scripts/copy-map-assets.mjs # copies PNGs to public/maps/village (runs via predev/prebuild)
-  components/VillageMap.tsx # canvas renderer + movement + collision + pins
+  assets/meadowbrook/       # tileset.png + trainer.png (16px GBA tiles @ 3x zoom)
+  assets/village-tileset/   # CraftPix pack (superseded, kept for later reuse)
+  data/meadowbrook.tmj      # Tiled map: 32x24, layers ground/objects/above + warps + interactions
+  data/pins.json            # generated: 5 stock-pin tiles (verified walkable + reachable)
+  scripts/generate-pins.mjs # regenerates pins.json after editing the tmj
+  scripts/copy-map-assets.mjs # syncs sprites + tmj to public/maps (runs via predev/prebuild)
+  components/VillageMap.tsx # the engine: grid movement, collision from tmj tile props,
+                            # 3-layer render (ground < objects < player < above), dialogue boxes,
+                            # animated water, poké ball stock pins with 30s respawn
 ```
 
-`public/maps/village/` is generated output (gitignored) — never edit it directly.
+`public/maps/` is generated output (gitignored). Edit `meadowbrook.tmj` in the
+[Tiled editor](https://www.mapeditor.org/), then restart `pnpm dev` (or rerun
+`node maps/scripts/copy-map-assets.mjs`).
 
-## Controls
+## Game hooks (from the tmj)
 
-- Arrow keys — walk
-- Click / tap ground, or drag — click-to-move
-- Scroll — zoom (1x–3.5x)
-- Tap a glowing pin — inspect the stock (battle hook: `selected` state in VillageMap)
+- **Signs/mailboxes** — dialogue text lives in the tmj `interactions` objects
+- **Warps** — house doors + north exit flash a "hook up your map here" dialogue (interiors later)
+- **Stock pins** — `maps/data/pins.json`: symbol/drop per ball; catch → HUD bag + respawn timer
+- **Spawn** — `spawn` object in the tmj
 
-## Regenerating the map
+## CraftPix village (previous iteration)
 
-Edit placements in `scripts/generate-map.mjs`, then:
-
-```
-node maps/scripts/generate-map.mjs
-```
-
-Assets sync automatically on `pnpm dev` / `pnpm build` via the copy script.
+`village-map.json` + `generate-map.mjs` + CraftPix assets remain in the repo,
+unused by `/maps`. Kept as a candidate second map / warp destination.
 
 ## Merge-later story
 
 Everything map-specific lives under `maps/` (+ generated `public/maps/`).
 To merge into `main`: move `maps/components/VillageMap.tsx` into
-`app/components/`, keep the JSON import path working, drop the `/maps`
-preview route (or keep it as a debug view), and wire the map as the
-"zone view" when a player zooms into a globe pin.
+`app/components/`, drop the `/maps` preview route (or keep it as a debug
+view), and wire the map as the "zone view" when a player zooms into a globe pin.
 
 ## Next steps
 
-- Character sprites (the pack has none — player is a drawn token for now)
-- 1v1 battle overlay on pin catch
-- Animated doors (`assets/village-tileset/animated/`) attached to houses
-- Second tileset layer / interiors
+- 1v1 battle overlay on ball catch
+- Interior maps (house tmjs) wired to warps
+- Trainer sprite: 4-frame walk sheets (current sheet is 3-frame, ported as-is)
+- NPC sprites from poke-assets.png
+
