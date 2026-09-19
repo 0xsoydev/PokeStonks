@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node ./scripts/copy-maplibre-worker.mjs",
-    "prebuild": "node ./scripts/copy-maplibre-worker.mjs",
+    "predev": "node ./scripts/copy-maplibre-worker.mjs && node ./maps/scripts/copy-map-assets.mjs",
+    "prebuild": "node ./scripts/copy-maplibre-worker.mjs && node ./maps/scripts/copy-map-assets.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@types/three": "^0.186.0",
+    "gifuct-js": "^2.1.2",
     "maplibre-gl": "^6.10.0",
     "next": "16.3.5",
     "postprocessing": "^6.39.5",
