@@ -405,6 +405,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     };
     resizeObserver?: ResizeObserver;
     raf?: number;
+    stop?: () => void;
     quad?: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
     timeOffset?: number;
     composer?: EffectComposer;
@@ -431,7 +432,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       if (threeRef.current) {
         const t = threeRef.current;
         t.resizeObserver?.disconnect();
-        cancelAnimationFrame(t.raf!);
+        t.stop?.();
         t.quad?.geometry.dispose();
         t.material.dispose();
         t.composer?.dispose();
@@ -583,7 +584,9 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
         passive: true
       });
       let raf = 0;
+      let stopped = false;
       const animate = () => {
+        if (stopped) return;
         if (autoPauseOffscreen && !visibilityRef.current.visible) {
           raf = requestAnimationFrame(animate);
           return;
@@ -620,6 +623,10 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
         uniforms,
         resizeObserver: ro,
         raf,
+        stop: () => {
+          stopped = true;
+          cancelAnimationFrame(raf);
+        },
         quad,
         timeOffset,
         composer,
@@ -651,20 +658,8 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       if (t.touch) t.touch.radiusScale = liquidRadius;
     }
     prevConfigRef.current = cfg;
-    return () => {
-      if (threeRef.current && mustReinit) return;
-      if (!threeRef.current) return;
-      const t = threeRef.current;
-      t.resizeObserver?.disconnect();
-      cancelAnimationFrame(t.raf!);
-      t.quad?.geometry.dispose();
-      t.material.dispose();
-      t.composer?.dispose();
-      t.renderer.dispose();
-      t.renderer.forceContextLoss();
-      if (t.renderer.domElement.parentElement === container) container.removeChild(t.renderer.domElement);
-      threeRef.current = null;
-    };
+    // No per-run cleanup: a prop change either updates uniforms in place or disposes + rebuilds above.
+    // Final teardown happens in the unmount effect below.
   }, [
     antialias,
     liquid,
@@ -687,6 +682,23 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     color,
     speed
   ]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    return () => {
+      const t = threeRef.current;
+      if (!t) return;
+      t.resizeObserver?.disconnect();
+      t.stop?.();
+      t.quad?.geometry.dispose();
+      t.material.dispose();
+      t.composer?.dispose();
+      t.renderer.dispose();
+      t.renderer.forceContextLoss();
+      if (container && t.renderer.domElement.parentElement === container) container.removeChild(t.renderer.domElement);
+      threeRef.current = null;
+    };
+  }, []);
 
   return (
     <div

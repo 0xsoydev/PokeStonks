@@ -1,4 +1,4 @@
-import { Room, Client, ServerError, CloseCode, type Delayed } from 'colyseus';
+import { Room, Client, ServerError, CloseCode, matchMaker, type Delayed } from 'colyseus';
 import { z } from 'zod';
 import {
   buildMon, DEFAULT_LEVEL, getSpecies, isSpeciesId, SPECIES_IDS, ROUTE_TABLES, getMarket, pickSlot,
@@ -33,6 +33,20 @@ const MAX_IDLE_STRIKES = 3;
 
 /** Scale a wait down in tests; identity in production. */
 const T = (ms: number) => (config.fastTiming ? Math.max(15, Math.floor(ms * 0.02)) : ms);
+
+/** Unambiguous alphabet (no I, O, 0, 1) so a code read aloud or typed on a phone survives. */
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+async function uniqueDuelCode(): Promise<string> {
+  for (let i = 0; i < 12; i++) {
+    let code = '';
+    for (let j = 0; j < 5; j++) code += CODE_ALPHABET[cryptoRng.int(CODE_ALPHABET.length)];
+    let taken: unknown;
+    try { taken = await matchMaker.getRoomById(code); } catch { taken = undefined; }
+    if (!taken) return code;
+  }
+  throw new ServerError(4503, 'Could not allocate a duel code. Try again.');
+}
 
 function pickBotSpecies(marketId: string | undefined, avoid: string): string {
   const theme = getMarket(marketId ?? '')?.routeTheme ?? 'tech';
@@ -80,13 +94,17 @@ export class BattleRoom extends Room<{ state: BattleState }> {
 
   // ─────────────────────────────── lifecycle ───────────────────────────────
 
-  onCreate(options: { mode?: string; marketId?: string }) {
+  async onCreate(options: { mode?: string; marketId?: string }) {
     const mode = options?.mode === 'practice' || options?.mode === 'private' ? options.mode : 'quick';
     this.setState(new BattleState());
     this.state.phase = 'WAITING';
     this.state.mode = mode;
     this.state.marketId = options?.marketId ?? '';
-    if (mode === 'private') this.setPrivate(true);
+    if (mode === 'private') {
+      // A short, typeable code doubles as the room id: the host shares it, the friend joins by it.
+      this.roomId = await uniqueDuelCode();
+      this.setPrivate(true);
+    }
 
     this.onMessage(MSG.ready, (client) => this.onReady(client));
     this.onMessage(MSG.lockMove, (client, raw) => this.onLockMove(client, raw));

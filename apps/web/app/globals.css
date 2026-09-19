@@ -1,1 +1,566 @@
 @import "tailwindcss";
+/* Family name must stay exactly "Press Start 2P": the Phaser canvas draws text with it. */
+@import "@fontsource/press-start-2p";
+
+/* ------------------------------------------------------------------------------------------------
+   PokeStonks design tokens
+
+   One handheld world, two surfaces, both lifted from the game itself:
+     plate   cream fill, slate edge     -> information (stats, prices, results)
+     dialog  navy fill, gold+white edge -> choices and actions
+   Selection is a blinking menu cursor (a pixel triangle), never a hover colour wash.
+   Display + numerals: Press Start 2P.  Prose + data (addresses, taglines): Atkinson Hyperlegible Next.
+   ------------------------------------------------------------------------------------------------ */
+@theme static {
+  --color-navy: #183088;
+  --color-navy-deep: #0e1c5c;
+  --color-gold: #d8a830;
+  --color-gold-deep: #a07818;
+  --color-yellow: #f8d858;
+  --color-cream: #f8f8d0;
+  --color-cream-deep: #e6e4b0;
+  --color-ink: #181818;
+  --color-slate: #484878;
+  --color-slate-soft: #7878a8;
+  --color-red: #e84040;
+  --color-red-deep: #b42222; /* red for small text on cream (AA) */
+  --color-green: #58d858;
+  --color-sky: #94c6fc;
+  --color-sky-pale: #e2f0ff;
+
+  /* Types (fixed by the game) */
+  --color-t-normal: #a8a878;
+  --color-t-electric: #f8d030;
+  --color-t-grass: #78c850;
+  --color-t-fire: #f08030;
+  --color-t-water: #6890f0;
+  --color-t-psychic: #f85888;
+
+  --font-pixel: "Press Start 2P", ui-monospace, monospace;
+
+  --breakpoint-xs: 30rem;
+}
+
+/* Runtime font var from next/font, so it needs `inline`. */
+@theme inline {
+  --font-body: var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --px: 4px; /* the one length everything pixel-stepped is built from */
+  --focus: var(--color-navy);
+  color-scheme: light;
+}
+
+html {
+  background: var(--color-sky-pale);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-sky-pale);
+  color: var(--color-ink);
+  font-family: var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+/* Keyboard focus: always visible, colour flips to stay legible on navy. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.on-navy,
+.panel-dialog {
+  --focus: var(--color-yellow);
+}
+
+.font-pixel,
+.t-pixel {
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+.t-8 { font-size: 8px; }
+.t-10 { font-size: 10px; }
+.t-12 { font-size: 12px; }
+.t-14 { font-size: 14px; }
+.t-16 { font-size: 16px; }
+.t-20 { font-size: 20px; }
+.t-24 { font-size: 24px; }
+
+.sr-only-x {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- Panels
+   Pixel-notched frame built from box-shadow alone: four offset copies of the edge colour (no corner
+   squares, so every corner is stepped), plus a shelf under the bottom edge. `margin` reserves the
+   4px the frame paints outside the box. The optional inner ring is ::after. */
+.panel {
+  --fill: var(--color-cream);
+  --edge: var(--color-slate);
+  --ring: #ffffff;
+  --drop: rgba(24, 24, 24, 0.3);
+  position: relative;
+  margin: var(--px);
+  padding: 14px 16px;
+  background: var(--fill);
+  color: var(--color-ink);
+  box-shadow:
+    0 calc(var(--px) * -1) 0 0 var(--edge),
+    0 var(--px) 0 0 var(--edge),
+    calc(var(--px) * -1) 0 0 0 var(--edge),
+    var(--px) 0 0 0 var(--edge),
+    0 calc(var(--px) * 2) 0 0 var(--drop);
+}
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: var(--px);
+  pointer-events: none;
+  box-shadow:
+    0 -2px 0 0 var(--ring),
+    0 2px 0 0 var(--ring),
+    -2px 0 0 0 var(--ring),
+    2px 0 0 0 var(--ring);
+}
+.panel-plate {
+  --fill: var(--color-cream);
+  --edge: var(--color-slate);
+  --ring: rgba(255, 255, 255, 0.85);
+}
+.panel-dialog {
+  --fill: var(--color-navy);
+  --edge: var(--color-gold);
+  --ring: #ffffff;
+  --drop: rgba(14, 28, 92, 0.55);
+  color: var(--color-cream);
+}
+.panel-well {
+  /* a recessed cream field inside a plate/dialog: stat tables, address boxes */
+  --fill: var(--color-cream-deep);
+  --edge: var(--color-slate-soft);
+  --drop: transparent;
+  --ring: transparent;
+  padding: 8px 10px;
+  margin: var(--px);
+}
+.panel-flat::after { display: none; }
+
+/* ---------------------------------------------------------------- Buttons
+   Chunky keycaps: notched edge + a lip underneath that collapses when pressed. */
+.btn {
+  --btn-fill: var(--color-yellow);
+  --btn-fg: var(--color-ink);
+  --btn-edge: var(--color-ink);
+  --btn-lip: var(--color-gold);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  min-width: 48px;
+  margin: var(--px);
+  padding: 12px 18px;
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--btn-fg);
+  background: var(--btn-fill);
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+  touch-action: manipulation;
+  box-shadow:
+    0 calc(var(--px) * -1) 0 0 var(--btn-edge),
+    calc(var(--px) * -1) 0 0 0 var(--btn-edge),
+    var(--px) 0 0 0 var(--btn-edge),
+    0 var(--px) 0 0 var(--btn-edge),
+    inset 0 calc(var(--px) * -1) 0 0 var(--btn-lip),
+    0 calc(var(--px) * 2) 0 0 var(--btn-edge);
+}
+.btn:hover { filter: brightness(1.06); }
+.btn:active {
+  transform: translateY(var(--px));
+  box-shadow:
+    0 calc(var(--px) * -1) 0 0 var(--btn-edge),
+    calc(var(--px) * -1) 0 0 0 var(--btn-edge),
+    var(--px) 0 0 0 var(--btn-edge),
+    0 var(--px) 0 0 var(--btn-edge),
+    inset 0 calc(var(--px) * -1) 0 0 var(--btn-lip);
+}
+.btn[disabled],
+.btn[aria-disabled="true"] {
+  --btn-fill: var(--color-cream-deep);
+  --btn-fg: var(--color-slate);
+  --btn-edge: var(--color-slate-soft);
+  --btn-lip: var(--color-slate-soft);
+  cursor: not-allowed;
+  filter: none;
+}
+.btn-secondary {
+  --btn-fill: var(--color-cream);
+  --btn-edge: var(--color-slate);
+  --btn-lip: var(--color-cream-deep);
+}
+.btn-quiet {
+  --btn-fill: var(--color-navy);
+  --btn-fg: var(--color-cream);
+  --btn-edge: var(--color-gold);
+  --btn-lip: var(--color-navy-deep);
+  --focus: var(--color-yellow);
+}
+.btn-sm {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 10px;
+}
+.btn-icon {
+  padding: 0;
+  width: 44px;
+  min-height: 44px;
+}
+
+/* Menu list (title screen, dialogs): the blinking triangle marks the current choice. */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px 8px 8px;
+  color: var(--color-cream);
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.menu-item::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 16px;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  background: transparent;
+}
+.menu-item:hover::before,
+.menu-item:focus-visible::before {
+  background: var(--color-yellow);
+  animation: cursor-blink 1s steps(1, end) infinite;
+}
+.menu-item:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); }
+.menu-item[disabled] { color: var(--color-slate-soft); cursor: wait; }
+.menu-item small {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(248, 248, 208, 0.75);
+}
+
+/* ---------------------------------------------------------------- Chips, bars */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  margin: 2px;
+  padding: 4px 8px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--color-ink);
+  background: var(--chip, var(--color-cream-deep));
+  box-shadow:
+    0 -2px 0 0 var(--color-ink),
+    0 2px 0 0 var(--color-ink),
+    -2px 0 0 0 var(--color-ink),
+    2px 0 0 0 var(--color-ink);
+}
+.chip-normal { --chip: var(--color-t-normal); }
+.chip-electric { --chip: var(--color-t-electric); }
+.chip-grass { --chip: var(--color-t-grass); }
+.chip-fire { --chip: var(--color-t-fire); }
+.chip-water { --chip: var(--color-t-water); }
+.chip-psychic { --chip: var(--color-t-psychic); }
+.chip-bull { --chip: var(--color-green); }
+.chip-bear { --chip: #d03030; color: #fff; }
+.chip-flat { --chip: var(--color-cream-deep); }
+.chip-plain { --chip: #fff; }
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: var(--chip, var(--color-t-normal));
+  box-shadow: 0 0 0 2px var(--color-ink);
+  margin: 2px;
+}
+
+/* Segmented stat bar: value is a % width, segments are painted, not drawn. */
+.bar {
+  position: relative;
+  height: 10px;
+  background: var(--color-cream-deep);
+  box-shadow: 0 0 0 2px var(--color-slate);
+  overflow: hidden;
+}
+.bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: repeating-linear-gradient(90deg, var(--bar, var(--color-navy)) 0 4px, transparent 4px 6px);
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  animation: spinner-steps 0.8s steps(1, end) infinite;
+}
+
+/* ---------------------------------------------------------------- Keyframes */
+@keyframes cursor-blink {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0.15; }
+}
+@keyframes spinner-steps {
+  0%   { clip-path: polygon(0 0, 50% 0, 50% 50%, 0 50%); }
+  25%  { clip-path: polygon(50% 0, 100% 0, 100% 50%, 50% 50%); }
+  50%  { clip-path: polygon(50% 50%, 100% 50%, 100% 100%, 50% 100%); }
+  75%  { clip-path: polygon(0 50%, 50% 50%, 50% 100%, 0 100%); }
+}
+@keyframes sheet-in {
+  0%   { transform: translateY(24px); opacity: 0; }
+  50%  { transform: translateY(12px); opacity: 1; }
+  100% { transform: translateY(0); }
+}
+@keyframes toast-in {
+  0%   { transform: translateY(-12px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pin-pulse {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------- Boot transition
+   Title/select -> globe is ONE move: the pixel field steps chunkier while the camera pulls in and the
+   screen's contents dissolve in hard pixel steps. Everything below only supports that. */
+.boot-out {
+  animation: boot-dissolve 520ms steps(6, end) forwards;
+  pointer-events: none;
+}
+@keyframes boot-dissolve {
+  0%   { opacity: 1; clip-path: inset(0 0 0 0); }
+  100% { opacity: 0; clip-path: inset(50% 0 50% 0); }
+}
+.boot-in {
+  animation: fade-in 500ms steps(5, end) both;
+}
+
+/* ---------------------------------------------------------------- Map chrome */
+.maplibregl-map { font-family: var(--font-body); }
+.maplibregl-canvas { outline: none; }
+.maplibregl-ctrl-attrib {
+  font-size: 11px;
+  background: rgba(248, 248, 208, 0.85) !important;
+  color: var(--color-slate);
+}
+.maplibregl-ctrl-attrib a { color: var(--color-navy); }
+.maplibregl-ctrl-bottom-right { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------- Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .menu-item:hover::before,
+  .menu-item:focus-visible::before { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------- Broker roster tiles */
+.tile {
+  --t: var(--color-t-normal);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 108px;
+  margin: 3px;
+  padding: 8px 2px 10px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.2;
+  color: var(--color-ink);
+  background: var(--color-cream);
+  border: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow:
+    0 -3px 0 0 var(--color-slate),
+    0 3px 0 0 var(--color-slate),
+    -3px 0 0 0 var(--color-slate),
+    3px 0 0 0 var(--color-slate);
+}
+.tile::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background: var(--t);
+}
+.tile[aria-checked="true"] {
+  background: var(--color-yellow);
+  box-shadow:
+    0 -3px 0 0 var(--color-ink),
+    0 3px 0 0 var(--color-ink),
+    -3px 0 0 0 var(--color-ink),
+    3px 0 0 0 var(--color-ink);
+}
+.tile[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 6px;
+  height: 10px;
+  background: var(--color-ink);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  animation: cursor-blink 1s steps(1, end) infinite;
+}
+.tile:hover:not([aria-checked="true"]) { background: #ffffff; }
+.tile:focus-visible { outline-offset: 5px; }
+
+/* ---------------------------------------------------------------- Map pins */
+.pin-host { pointer-events: none; }
+.pin {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 48px;
+  min-height: 56px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.pin-hidden { opacity: 0; pointer-events: none; }
+.pin-in { animation: fade-in 400ms steps(4, end) both; }
+.pin-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--chip, var(--color-t-normal));
+  box-shadow:
+    0 -3px 0 0 var(--color-ink),
+    0 3px 0 0 var(--color-ink),
+    -3px 0 0 0 var(--color-ink),
+    3px 0 0 0 var(--color-ink),
+    0 6px 0 0 rgba(24, 24, 24, 0.3);
+  transition: transform 120ms steps(2, end);
+}
+.pin-badge img,
+.pin-badge > span { image-rendering: pixelated; }
+.pin-count {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  color: var(--color-cream);
+  background: var(--color-navy);
+  box-shadow:
+    0 -3px 0 0 var(--color-gold),
+    0 3px 0 0 var(--color-gold),
+    -3px 0 0 0 var(--color-gold),
+    3px 0 0 0 var(--color-gold),
+    0 6px 0 0 rgba(24, 24, 24, 0.3);
+}
+.pin-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 2px 5px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.3;
+  color: var(--color-ink);
+  background: var(--color-cream);
+  box-shadow: 0 0 0 2px var(--color-ink);
+  white-space: nowrap;
+}
+.pin-mood-bull { color: #1f8f2a; }
+.pin-mood-bear { color: var(--color-red-deep); }
+.pin-stem {
+  width: 8px;
+  height: 6px;
+  margin-top: 2px;
+  background: var(--color-ink);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.pin:hover .pin-badge { transform: translateY(-3px); }
+.pin[data-selected] .pin-badge { transform: translateY(-4px); }
+.pin[data-selected] .pin-tag { color: var(--color-yellow); background: var(--color-navy); box-shadow: 0 0 0 2px var(--color-gold); }
+.pin[data-selected] .pin-mood-bull { color: var(--color-green); }
+.pin[data-selected] .pin-mood-bear { color: #ff8a8a; }
+.pin-pulse {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 48px;
+  height: 48px;
+  margin-left: -24px;
+  border: 3px solid var(--color-yellow);
+  animation: pin-pulse 1.4s steps(5, end) infinite;
+  pointer-events: none;
+}
+.pin:focus-visible { outline-offset: 0; }
+
+/* ---------------------------------------------------------------- Collection page */
+.collection-bg {
+  background-color: var(--color-sky-pale);
+  background-image:
+    linear-gradient(45deg, rgba(148, 198, 252, 0.28) 25%, transparent 25% 75%, rgba(148, 198, 252, 0.28) 75%),
+    linear-gradient(45deg, rgba(148, 198, 252, 0.28) 25%, transparent 25% 75%, rgba(148, 198, 252, 0.28) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.skeleton {
+  animation: skeleton-steps 1.2s steps(2, end) infinite;
+}
+@keyframes skeleton-steps {
+  0%   { --fill: var(--color-cream); }
+  50%  { --fill: var(--color-cream-deep); }
+}

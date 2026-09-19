@@ -20,7 +20,10 @@ async function fetchJson(url: string, ms: number): Promise<any> {
   const ctl = new AbortController();
   const to = setTimeout(() => ctl.abort(), ms);
   try {
-    const r = await fetch(url, { signal: ctl.signal });
+    const r = await fetch(url, {
+      signal: ctl.signal,
+      headers: config.pythApiKey ? { Authorization: `Bearer ${config.pythApiKey}` } : undefined,
+    });
     if (!r.ok) throw new Error(`hermes ${r.status}`);
     return await r.json();
   } finally {
@@ -28,7 +31,7 @@ async function fetchJson(url: string, ms: number): Promise<any> {
   }
 }
 
-/** Live Pyth prices via Hermes. Every method degrades to neutral/empty and NEVER throws. */
+/** Live Pyth prices via Hermes (needs PYTH_API_KEY; without it every reading is neutral). Every method degrades to neutral/empty and NEVER throws. */
 export class PriceService {
   private cache = new Map<string, Entry>();
   private inflight = new Map<string, Promise<Entry>>();

@@ -1,9 +1,5 @@
-import Globe from './components/Globe';
+import App from './components/App';
 
 export default function Home() {
-  return (
-    <main className="h-dvh w-full">
-      <Globe />
-    </main>
-  );
+  return <App />;
 }

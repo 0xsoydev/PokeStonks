@@ -1,34 +1,59 @@
 import { create } from 'zustand';
+import { isSpeciesId } from 'game-core';
 
-interface BrokerMon {
-  id: string;
-  name: string;
-  affinity: string;
-  level: number;
+export type Stage = 'title' | 'select' | 'globe';
+
+const SPECIES_SLOT = 'pokestonks.species';
+
+function readSpecies(): string | null {
+  try {
+    const v = window.localStorage.getItem(SPECIES_SLOT);
+    return isSpeciesId(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSpecies(id: string) {
+  try {
+    window.localStorage.setItem(SPECIES_SLOT, id);
+  } catch {
+    /* storage blocked: the choice lasts for this page view only */
+  }
 }
 
 interface SessionState {
-  wallet: string | null;
-  privyReady: boolean;
+  /** Which screen is showing. Not persisted: every visit starts at the title. */
+  stage: Stage;
+  /** Chosen BrokerMon. Persisted in localStorage `pokestonks.species`; null until hydrated/chosen. */
+  speciesId: string | null;
+  /** False during SSR and first paint; flips true once localStorage has been read (in an effect). */
+  hydrated: boolean;
+  /** Route currently being played (game overlay mounted), or null while on the globe. */
   marketId: string | null;
-  party: BrokerMon[];
-  reconnectToken: string | null;
-  setWallet: (w: string | null) => void;
-  setPrivyReady: (r: boolean) => void;
-  setMarketId: (id: string | null) => void;
-  setParty: (p: BrokerMon[]) => void;
-  setReconnectToken: (t: string | null) => void;
+  setStage: (stage: Stage) => void;
+  chooseSpecies: (id: string) => void;
+  enterRoute: (marketId: string) => void;
+  exitRoute: () => void;
+  /** Read persisted state. Call once from an effect so server and first client render agree. */
+  hydrate: () => void;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
-  wallet: null,
-  privyReady: false,
+export const useSessionStore = create<SessionState>((set, get) => ({
+  stage: 'title',
+  speciesId: null,
+  hydrated: false,
   marketId: null,
-  party: [],
-  reconnectToken: null,
-  setWallet: (wallet) => set({ wallet }),
-  setPrivyReady: (privyReady) => set({ privyReady }),
-  setMarketId: (marketId) => set({ marketId }),
-  setParty: (party) => set({ party }),
-  setReconnectToken: (reconnectToken) => set({ reconnectToken }),
+  setStage: (stage) => set({ stage }),
+  chooseSpecies: (id) => {
+    if (!isSpeciesId(id)) return;
+    writeSpecies(id);
+    set({ speciesId: id });
+  },
+  enterRoute: (marketId) => set({ marketId }),
+  exitRoute: () => set({ marketId: null }),
+  hydrate: () => {
+    if (get().hydrated) return;
+    set({ speciesId: readSpecies(), hydrated: true });
+  },
 }));

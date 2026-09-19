@@ -195,6 +195,22 @@ describe('BattleRoom (real server, real websockets)', () => {
     await a.leave(); await b.leave();
   }, 20_000);
 
+  it('private duel: host gets a short code, a friend joins by it, and they fight', async () => {
+    const host = await connect().create('battle', { wallet: nextWallet(), speciesId: 'nvda', mode: 'private' });
+    expect(host.roomId).toMatch(/^[A-HJ-NP-Z2-9]{5}$/);
+    await expect(connect().joinById('ZZZZZ', { wallet: nextWallet(), speciesId: 'aapl', mode: 'private' })).rejects.toBeTruthy();
+    // A quick-match player must never be dropped into someone's private room.
+    const stray = await connect().joinOrCreate('battle', { wallet: nextWallet(), speciesId: 'aapl', mode: 'quick' });
+    expect(stray.roomId).not.toBe(host.roomId);
+    await stray.leave();
+    const friend = await connect().joinById(host.roomId, { wallet: nextWallet(), speciesId: 'gme', mode: 'private' });
+    const lh = attach(host), lf = attach(friend);
+    await until(() => lh.end && lf.end, 25_000, 'duel end');
+    expect(lh.end.winner).toBe(lf.end.winner);
+    expect(lh.end.claimable).toBe(false); // relayer not configured in this suite
+    lh.stop(); lf.stop(); await host.leave(); await friend.leave();
+  }, 40_000);
+
   it('rewards are reported non-claimable when the relayer is not configured', async () => {
     const a = await connect().joinOrCreate('battle', { wallet: nextWallet(), speciesId: 'mstr', mode: 'quick' });
     const b = await connect().joinOrCreate('battle', { wallet: nextWallet(), speciesId: 'aapl', mode: 'quick' });
