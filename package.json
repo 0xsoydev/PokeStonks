@@ -4,5 +4,13 @@
   "packageManager": "pnpm@10.16.0",
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter monad_blitz_v4 dev",
+    "dev:server": "pnpm --filter server dev",
+    "build:web": "pnpm --filter monad_blitz_v4 build",
+    "test": "pnpm --filter game-core --filter server test",
+    "test:contracts": "cd contracts && forge test",
+    "typecheck": "pnpm --filter game-core --filter server --filter monad_blitz_v4 typecheck"
   }
 }

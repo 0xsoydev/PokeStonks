@@ -6,7 +6,8 @@
   "types": "index.ts",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit --strict --target es2022 --moduleResolution bundler --module esnext --skipLibCheck index.ts"
   },
   "devDependencies": {
     "vitest": "^5.0.1"
