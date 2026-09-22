@@ -14,6 +14,33 @@ function readable(e: unknown): string {
   return 'Could not connect that wallet. Unlock it and try again.';
 }
 
+const isMobile = () => typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+/** Phones have no wallet extension: send them into the MetaMask app's built-in browser instead. */
+function NoWallet() {
+  if (isMobile()) {
+    const here = typeof window !== 'undefined' ? `${window.location.host}${window.location.pathname}` : '';
+    return (
+      <div className="mb-3">
+        <p className="mb-3 text-[16px] leading-snug text-cream">
+          Phone browsers can&apos;t connect a wallet. Open PokeStonks inside the MetaMask app (its built-in browser) to connect
+          and claim rewards. Tip: start there before you battle.
+        </p>
+        <a className="btn w-full" href={`https://metamask.app.link/dapp/${here}`}>Open in MetaMask app</a>
+      </div>
+    );
+  }
+  return (
+    <p className="mb-3 text-[16px] leading-snug text-cream">
+      No browser wallet found. Install{' '}
+      <a className="underline decoration-2 underline-offset-2" href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">MetaMask</a>
+      , add Monad testnet, get MON from the{' '}
+      <a className="underline decoration-2 underline-offset-2" href="https://faucet.monad.xyz" target="_blank" rel="noopener noreferrer">faucet</a>
+      , then reload this page.
+    </p>
+  );
+}
+
 /** Pick a browser wallet. Opens from the title, the HUD, or the Claim button mid-battle. */
 export default function ConnectWalletDialog() {
   const open = useConnectDialog((s) => s.open);
@@ -76,13 +103,7 @@ function Dialog() {
         </p>
 
         {list.length === 0 ? (
-          <p className="mb-3 text-[16px] leading-snug text-cream">
-            No browser wallet found. Install{' '}
-            <a className="underline decoration-2 underline-offset-2" href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">MetaMask</a>
-            , add Monad testnet, get MON from the{' '}
-            <a className="underline decoration-2 underline-offset-2" href="https://faucet.monad.xyz" target="_blank" rel="noopener noreferrer">faucet</a>
-            , then reload this page.
-          </p>
+          <NoWallet />
         ) : (
           <ul className="mb-2 flex flex-col gap-2">
             {list.map((c, i) => (

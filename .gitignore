@@ -48,3 +48,5 @@ apps/web/public/maplibre/
 apps/web/AGENTS.md
 apps/web/CLAUDE.md
 next-env.d.ts
+.vercel
+.env*

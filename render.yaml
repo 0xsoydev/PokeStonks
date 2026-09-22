@@ -5,17 +5,16 @@ services:
     runtime: docker
     dockerfilePath: ./apps/server/Dockerfile
     dockerContext: .
-    plan: starter            # free instances sleep and drop live matches; use a paid instance for a demo
+    region: singapore
+    plan: free                # free instances sleep after 15 idle minutes; .github/workflows/keepalive.yml pings it
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      - key: ALLOWED_ORIGINS
-        value: https://YOUR-APP.vercel.app
       - key: ARENA_ADDRESS
-        sync: false
-      - key: CLAIM_SIGNER_PRIVATE_KEY
-        sync: false          # secret: set in the Render dashboard, never in git
-      - key: RELAYER_PRIVATE_KEY
-        sync: false          # secret; needs a little MON for gas
+        value: "0x41930014D474415F0e9882DE82434f336502f5B0"
       - key: RPC_URL
         value: https://testnet-rpc.monad.xyz
+      - key: CLAIM_SIGNER_PRIVATE_KEY
+        sync: false           # secret: the arena's voucher signer. Set in the Render dashboard, never in git.
+      - key: PYTH_API_KEY
+        sync: false           # secret: free key from https://docs.pyth.network/price-feeds/pro/acquire-api-key
